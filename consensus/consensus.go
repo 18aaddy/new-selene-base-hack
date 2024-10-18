@@ -1037,16 +1037,20 @@ func processTransaction(txBytes *[]byte, blockHash consensus_core.Bytes32, block
 
 	tx := common.Transaction{
 		Hash:             txEnvelope.Hash(),
-		Nonce:            txEnvelope.Nonce(),
-		BlockHash:        blockHash,
-		BlockNumber:      blockNumber,
-		TransactionIndex: index,
+		Nonce:            hexutil.Uint64(txEnvelope.Nonce()),
+		BlockHash:        func() string {
+			data := [32]byte(blockHash)
+			hexString := hex.EncodeToString(data[:])
+			return hexString
+		}(),
+		BlockNumber:      hexutil.Uint64(*blockNumber),
+		TransactionIndex: hexutil.Uint64(index),
 		To:               txEnvelope.To(),
-		Value:            txEnvelope.Value(),
-		GasPrice:         txEnvelope.GasPrice(),
-		Gas:              txEnvelope.Gas(),
+		Value:            hexutil.Big(*txEnvelope.Value()),
+		GasPrice:         hexutil.Big(*txEnvelope.GasPrice()),
+		Gas:              hexutil.Uint64(txEnvelope.Gas()),
 		Input:            txEnvelope.Data(),
-		ChainID:          txEnvelope.ChainId(),
+		ChainID:          hexutil.Big(*txEnvelope.ChainId()),
 		TransactionType:  txEnvelope.Type(),
 	}
 
@@ -1071,12 +1075,12 @@ func processTransaction(txBytes *[]byte, blockHash consensus_core.Bytes32, block
 	case types.AccessListTxType:
 		tx.AccessList = txEnvelope.AccessList()
 	case types.DynamicFeeTxType:
-		tx.MaxFeePerGas = new(big.Int).Set(txEnvelope.GasFeeCap())
-		tx.MaxPriorityFeePerGas = new(big.Int).Set(txEnvelope.GasTipCap())
+		tx.MaxFeePerGas = hexutil.Big(*new(big.Int).Set(txEnvelope.GasFeeCap()))
+		tx.MaxPriorityFeePerGas = hexutil.Big(*new(big.Int).Set(txEnvelope.GasTipCap()))
 	case types.BlobTxType:
-		tx.MaxFeePerGas = new(big.Int).Set(txEnvelope.GasFeeCap())
-		tx.MaxPriorityFeePerGas = new(big.Int).Set(txEnvelope.GasTipCap())
-		tx.MaxFeePerBlobGas = new(big.Int).Set(txEnvelope.BlobGasFeeCap())
+		tx.MaxFeePerGas = hexutil.Big(*new(big.Int).Set(txEnvelope.GasFeeCap()))
+		tx.MaxPriorityFeePerGas = hexutil.Big(*new(big.Int).Set(txEnvelope.GasTipCap()))
+		tx.MaxFeePerBlobGas = hexutil.Big(*new(big.Int).Set(txEnvelope.BlobGasFeeCap()))
 		tx.BlobVersionedHashes = txEnvelope.BlobHashes()
 	case types.LegacyTxType:
 		// No additional fields to set

@@ -14,7 +14,7 @@ type MockRpc struct {
 	testdata string
 }
 
-func NewMockRpc(path string) *MockRpc {
+func (m *MockRpc) New(path string) *MockRpc {
 	return &MockRpc{
 		testdata: path,
 	}

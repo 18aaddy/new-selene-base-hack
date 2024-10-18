@@ -3,10 +3,12 @@ package common
 import (
 	"encoding/json"
 	"fmt"
-	"math/big"
+
+	// "math/big"
 	"strconv"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/holiman/uint256"
 )
@@ -49,22 +51,22 @@ type Transactions struct {
 type Transaction struct {
 	AccessList           types.AccessList
 	Hash                 common.Hash
-	Nonce                uint64
-	BlockHash            [32]byte
-	BlockNumber          *uint64
-	TransactionIndex     uint64
+	Nonce                hexutil.Uint64
+	BlockHash            string
+	BlockNumber          hexutil.Uint64
+	TransactionIndex     hexutil.Uint64
 	From                 string
 	To                   *common.Address
-	Value                *big.Int
-	GasPrice             *big.Int
-	Gas                  uint64
+	Value                hexutil.Big
+	GasPrice             hexutil.Big
+	Gas                  hexutil.Uint64
 	Input                []byte
-	ChainID              *big.Int
+	ChainID              hexutil.Big
 	TransactionType      uint8
 	Signature            *Signature
-	MaxFeePerGas         *big.Int
-	MaxPriorityFeePerGas *big.Int
-	MaxFeePerBlobGas     *big.Int
+	MaxFeePerGas         hexutil.Big
+	MaxPriorityFeePerGas hexutil.Big
+	MaxFeePerBlobGas     hexutil.Big
 	BlobVersionedHashes  []common.Hash
 }
 
