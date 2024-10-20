@@ -24,7 +24,7 @@ import (
 )
 
 func MakeNewRpc(t *testing.T) ExecutionRpc{
-	rpcUrl := "https://eth-mainnet.g.alchemy.com/v2/KLk2JrSPcjR8dp55N7XNTs9jeKTKHMoA"
+	rpcUrl := "https://eth-mainnet.g.alchemy.com/v2/j28GcevSYukh-GvSeBOYcwHOfIggF1Gt"
 
 	var httpRpc ExecutionRpc
 	httpRpc, err := (&HttpRpc{}).New(&rpcUrl)

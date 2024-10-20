@@ -9,6 +9,7 @@ import (
 
 	seleneCommon "github.com/BlocSoc-iitr/selene/common"
 	"github.com/BlocSoc-iitr/selene/config"
+	"github.com/BlocSoc-iitr/selene/utils"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -18,12 +19,14 @@ import (
 	"github.com/holiman/uint256"
 
 	"fmt"
+
 	"github.com/ethereum/go-ethereum/common/hexutil"
+
 	// "time"
 	"encoding/json"
-// 	"fmt"
-// 	"log"
-// 	"math/big"
+	// 	"fmt"
+	// 	"log"
+	// 	"math/big"
 	"net"
 	"net/http"
 	"sync"
@@ -56,6 +59,9 @@ func (c Client) Build(b ClientBuilder) (*Client, error) {
 	_ = err
 	if b.Network != nil {
 		baseConfig, err = b.Network.BaseConfig(string(*b.Network))
+		if err != nil {
+			return nil, errors.Join(errors.New("error in base config"), err)
+		}
 	} else {
 		if b.Config == nil {
 			return nil, errors.New("missing network config")
@@ -146,6 +152,9 @@ func (c Client) Build(b ClientBuilder) (*Client, error) {
 		DatabaseType:         nil,
 	}
 	client, err := Client{}.New(config)
+	if err != nil {
+		return nil, errors.Join(errors.New("error in client creation"), err)
+	}
 	return &client, nil
 }
 type Client struct {
@@ -154,7 +163,7 @@ type Client struct {
 }
 func (c Client) New(clientConfig config.Config) (Client, error) {
 	config := &clientConfig
-	node, err := NewNode(config)
+	node,_, err := NewNode(config)
 	var rpc Rpc
 	if err != nil {
 		return Client{}, err
@@ -179,7 +188,7 @@ func (c *Client) Start() error {
 		defer close(errorChan)
 		if runtime.GOARCH != "wasm" {
 			if c.Rpc == nil {
-				errorChan <- errors.New("Rpc not found.")
+				errorChan <- errors.New("Rpc not found")
 				return
 			}
 			_, err := c.Rpc.Start()
@@ -748,7 +757,7 @@ type Node struct {
 	HistorySize int
 }
 
-func NewNode(config *config.Config) (*Node, error) {
+func NewNode(config *config.Config) (*Node, *execution.State, error) {
 	consensusRPC := config.ConsensusRpc
 	executionRPC := config.ExecutionRpc
 	// Initialize ConsensusClient
@@ -756,18 +765,18 @@ func NewNode(config *config.Config) (*Node, error) {
 	// Extract block receivers
 	blockRecv := consensus.BlockRecv
 	if blockRecv == nil {
-		return nil, errors.New("blockRecv is nil")
+		return nil, nil, errors.New("blockRecv is nil")
 	}
 	finalizedBlockRecv := consensus.FinalizedBlockRecv
 	if finalizedBlockRecv == nil {
-		return nil, errors.New("finalizedBlockRecv is nil")
+		return nil, nil, errors.New("finalizedBlockRecv is nil")
 	}
 	// Initialize State
 	state := execution.NewState(256, blockRecv, finalizedBlockRecv)
 	// Initialize ExecutionClient
 	execution, err := (&execution.ExecutionClient{}).New(executionRPC, state)
 	if err != nil {
-		return nil, errors.New("ExecutionClient creation error")
+		return nil, nil, errors.New("ExecutionClient creation error")
 	}
 	// Return the constructed Node
 	return &Node{
@@ -775,7 +784,7 @@ func NewNode(config *config.Config) (*Node, error) {
 		Execution:   execution,
 		Config:      config,
 		HistorySize: 64,
-	}, nil
+	}, state, nil
 }
 
 // func (n *Node) Call(tx *TransactionRequest, block seleneCommon.BlockTag) ([]byte, *NodeError) {
@@ -947,7 +956,7 @@ func (n *Node) GetStorageAt(address seleneCommon.Address, slot common.Hash, tag 
 
 	go func() {
 		n.CheckHeadAge()
-		account, err := n.Execution.GetAccount(&address, []common.Hash{slot}, tag)
+		account, err := n.Execution.GetAccount(&address, nil, tag)
 		if err != nil {
 			errorChan <- err
 			return
@@ -2023,7 +2032,7 @@ func (r *RpcInner) GetLogs(filter ethereum.FilterQuery) ([]types.Log, error) {
 
     go func() {
         logs, err := r.Node.GetLogs(&filter)
-        if err != nil {
+	    if err != nil {
             errorChan <- err
             return
         }
@@ -2229,9 +2238,40 @@ func rpcHandler(w http.ResponseWriter, r *http.Request) {
 		errorChan := make(chan error)
 
 		go func() {
-			address := req.Params[0].(seleneCommon.Address)
-			block := req.Params[1].(seleneCommon.BlockTag)
-			balance, err := rpc.GetBalance(address, block)
+			// address := req.Params[0].(seleneCommon.Address)
+			addrStr := req.Params[0].(string)
+			var addressStruct seleneCommon.Address
+			// addrStr := address["Addr"].(string)
+			addressCommon, err := utils.Hex_str_to_bytes(addrStr)
+			if err != nil {
+				errorChan <- err
+				return
+			}
+			var b [20]byte
+			copy(b[:], addressCommon)
+			addressStruct.Addr = b
+			
+			// block := req.Params[1].(seleneCommon.BlockTag)
+
+			blockMap := req.Params[1].(string)
+
+			// Create an empty instance of BlockTag
+			var blockTag seleneCommon.BlockTag
+			switch blockMap {
+			case "latest":
+				blockTag.Latest = true
+			case "finalized":
+				blockTag.Finalized = true
+			default:
+				blockTag.Number, err = hexutil.DecodeUint64(blockMap)
+				if err != nil {
+					errorChan <- err
+					return
+				}
+			}
+			
+			// fmt.Printf("Address: %v, blockTag: {\nnumber: %v\nlatest: %v\n finalized: %v\n}", addressStruct, blockTag.Number, blockTag.Latest, blockTag.Finalized)
+			balance, err := rpc.GetBalance(addressStruct, blockTag)
 			if err != nil {
 				errorChan <- err
 				return
@@ -2428,14 +2468,30 @@ func rpcHandler(w http.ResponseWriter, r *http.Request) {
 		case err := <-errorChan:
 			writeRPCResponse(w, req.ID, nil, err.Error())
 		}
-	case "eth_getBlockByNumber":
+	case "eth_getBlockByNumber": //
 		resultChan := make(chan *seleneCommon.Block)
 		errorChan := make(chan error)
 
 		go func() {
-			block := req.Params[0].(seleneCommon.BlockTag)
+			blockMap := req.Params[0].(string)
+
+			// Create an empty instance of BlockTag
+			var blockTag seleneCommon.BlockTag
+			switch blockMap {
+			case "latest":
+				blockTag.Latest = true
+			case "finalized":
+				blockTag.Finalized = true
+			default:
+				blockTag.Number, err = hexutil.DecodeUint64(blockMap)
+				if err != nil {
+					errorChan <- err
+					return
+				}
+			}
+
 			fullTx := req.Params[1].(bool)
-			result, err := rpc.GetBlockByNumber(block, fullTx)
+			result, err := rpc.GetBlockByNumber(blockTag, fullTx)
 			if err != nil {
 				errorChan <- err
 				return
@@ -2556,7 +2612,47 @@ func rpcHandler(w http.ResponseWriter, r *http.Request) {
 		errorChan := make(chan error)
 
 		go func() {
-			filter := req.Params[0].(ethereum.FilterQuery)
+			// filter := req.Params[0].(ethereum.FilterQuery)
+			// First, assert params[0] as a map[string]interface{}
+			filterMap := req.Params[0].(map[string]interface{})
+
+			var filter ethereum.FilterQuery
+		
+			// Now, manually assign values from filterMap to filter struct
+			if fromBlock, ok := filterMap["fromBlock"].(string); ok {
+				filter.FromBlock = new(big.Int)
+				filter.FromBlock.SetString(fromBlock, 0)
+			}
+			
+			if toBlock, ok := filterMap["toBlock"].(string); ok {
+				filter.ToBlock = new(big.Int)
+				filter.ToBlock.SetString(toBlock, 0)
+			}
+		
+			if addresses, ok := filterMap["addresses"].([]interface{}); ok {
+				for _, addr := range addresses {
+					if addrStr, ok := addr.(string); ok {
+						filter.Addresses = append(filter.Addresses, common.HexToAddress(addrStr))
+					}
+				}
+			}
+			if blockHash, ok := filterMap["blockHash"].(string); ok {
+				filter.BlockHash.SetBytes(common.Hex2Bytes(blockHash))
+			} 
+		
+			if topics, ok := filterMap["topics"].([]interface{}); ok {
+				for _, topic := range topics {
+					if topicList, ok := topic.([]interface{}); ok {
+						var topicGroup []common.Hash
+						for _, t := range topicList {
+							if topicStr, ok := t.(string); ok {
+								topicGroup = append(topicGroup, common.HexToHash(topicStr))
+							}
+						}
+						filter.Topics = append(filter.Topics, topicGroup)
+					}
+				}
+			}
 			logs, err := rpc.GetLogs(filter)
 			if err != nil {
 				errorChan <- err

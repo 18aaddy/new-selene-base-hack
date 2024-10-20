@@ -108,10 +108,13 @@ func (con ConsensusClient) New(rpc *string, config config.Config) ConsensusClien
 	var initialCheckpoint [32]byte
 
 	if config.Checkpoint != nil {
+		initialCheckpoint = *config.Checkpoint
+	} else {
 		initialNewCheckpoint, errorWhileLoadingCheckpoint := db.LoadCheckpoint()
 		copy(initialCheckpoint[:], initialNewCheckpoint)
 		if errorWhileLoadingCheckpoint != nil {
-			log.Printf("error while loading checkpoint: %v", errorWhileLoadingCheckpoint)
+			initialCheckpoint = config.DefaultCheckpoint
+			// log.Printf("error while loading checkpoint: %v", errorWhileLoadingCheckpoint)
 		}
 	}
 	if initialCheckpoint == [32]byte{} {
@@ -136,7 +139,7 @@ func (con ConsensusClient) New(rpc *string, config config.Config) ConsensusClien
 					os.Exit(1)
 				}
 			} else {
-				log.Printf("sync failed: %v", err)
+				log.Printf("sync failed: %v", err)		//!
 				os.Exit(1)
 			}
 		}
@@ -644,7 +647,7 @@ func (in *Inner) verify_generic_update(update *GenericUpdate, expectedCurrentSlo
 		storePeriod := utils.CalcSyncPeriod(store.FinalizedHeader.Slot)
 		updateSigPeriod := utils.CalcSyncPeriod(update.SignatureSlot)
 
-		fmt.Printf("\n-----------------------------\n\n Finalized Header: %v,  update: %v \n\n-----------------------------\n", store.FinalizedHeader, update)
+		// fmt.Printf("\n-----------------------------\n\n Finalized Header: %v,  update: %v \n\n-----------------------------\n", store.FinalizedHeader, update)
 
 		var validPeriod bool
 		if store.NextSyncCommitee != nil {
@@ -654,7 +657,7 @@ func (in *Inner) verify_generic_update(update *GenericUpdate, expectedCurrentSlo
 		}
 
 		if !validPeriod {
-			fmt.Printf("\n\nYes this is the error. storePeriod,(store.FinalizedHeader.slot): %d, %v, updateSigPeriod, (update.SignatureSlot): %d, %v\n\n", storePeriod, store.FinalizedHeader.Slot, updateSigPeriod, update.SignatureSlot)
+			// fmt.Printf("\n\nYes this is the error. storePeriod,(store.FinalizedHeader.slot): %d, %v, updateSigPeriod, (update.SignatureSlot): %d, %v\n\n", storePeriod, store.FinalizedHeader.Slot, updateSigPeriod, update.SignatureSlot)
 			return ErrInvalidPeriod			//!
 		}
 
@@ -1024,14 +1027,14 @@ func PayloadToBlock(value *consensus_core.ExecutionPayload) (*common.Block, erro
 		ReceiptsRoot:     value.ReceiptsRoot,
 		StateRoot:        value.StateRoot,
 		Timestamp:        value.Timestamp,
-		TotalDifficulty:  uint64(0),
+		TotalDifficulty:  uint256.NewInt(0),
 		Transactions:     common.Transactions{Full: txs},
 		MixHash:          value.PrevRandao,
 		Nonce:            emptyNonce,
 		Sha3Uncles:       emptyUncleHash,
 		Size:             0,
 		TransactionsRoot: [32]byte{},
-		Uncles:           [][32]byte{},
+		Uncles:           []geth.Hash{},
 		BlobGasUsed:      value.BlobGasUsed,
 		ExcessBlobGas:    value.ExcessBlobGas,
 	}, nil
@@ -1077,7 +1080,7 @@ func processTransaction(txBytes *[]byte, blockHash consensus_core.Bytes32, block
 	tx.Signature = &common.Signature{
 		R:       r.String(),
 		S:       s.String(),
-		V:       v.Uint64(),
+		V:       hexutil.Uint64(v.Uint64()),
 		YParity: common.Parity{Value: v.Uint64() == 1},
 	}
 

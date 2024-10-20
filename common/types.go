@@ -35,50 +35,50 @@ type Block struct {
 	Size             uint64
 	StateRoot        [32]byte
 	Timestamp        uint64
-	TotalDifficulty  uint64
+	TotalDifficulty  *uint256.Int
 	Transactions     Transactions
 	TransactionsRoot [32]byte
-	Uncles           [][32]byte
+	Uncles           []common.Hash
 	BlobGasUsed      *uint64
 	ExcessBlobGas    *uint64
 }
 
 type Transactions struct {
-	Hashes [][32]byte
-	Full   []Transaction // transaction needs to be defined
+	Hashes [][32]byte    `json:"hashes"` // Transaction hashes as []common.Hash
+	Full   []Transaction `json:"full"`   // Full transactions
 }
 
 type Transaction struct {
-	AccessList           types.AccessList
-	Hash                 common.Hash
-	Nonce                hexutil.Uint64
-	BlockHash            string
-	BlockNumber          hexutil.Uint64
-	TransactionIndex     hexutil.Uint64
-	From                 string
-	To                   *common.Address
-	Value                hexutil.Big
-	GasPrice             hexutil.Big
-	Gas                  hexutil.Uint64
-	Input                []byte
-	ChainID              hexutil.Big
-	TransactionType      uint8
-	Signature            *Signature
-	MaxFeePerGas         hexutil.Big
-	MaxPriorityFeePerGas hexutil.Big
-	MaxFeePerBlobGas     hexutil.Big
-	BlobVersionedHashes  []common.Hash
+	AccessList           types.AccessList `json:"accessList"`
+	Hash                 common.Hash      `json:"hash"`
+	Nonce                hexutil.Uint64   `json:"nonce"`
+	BlockHash            string           `json:"blockHash"`   // Pointer because it's nullable
+	BlockNumber          hexutil.Uint64   `json:"blockNumber"` // Pointer because it's nullable
+	TransactionIndex     hexutil.Uint64   `json:"transactionIndex"`
+	From                 string           `json:"from"`
+	To                   *common.Address  `json:"to"` // Pointer because 'to' can be null for contract creation
+	Value                hexutil.Big      `json:"value"`
+	GasPrice             hexutil.Big      `json:"gasPrice"`
+	Gas                  hexutil.Uint64   `json:"gas"`
+	Input                hexutil.Bytes    `json:"input"`
+	ChainID              hexutil.Big      `json:"chainId"`
+	TransactionType      uint8            `json:"type"`
+	Signature            *Signature       `json:"signature"`
+	MaxFeePerGas         hexutil.Big      `json:"maxFeePerGas"`
+	MaxPriorityFeePerGas hexutil.Big      `json:"maxPriorityFeePerGas"`
+	MaxFeePerBlobGas     hexutil.Big      `json:"maxFeePerBlobGas"`
+	BlobVersionedHashes  []common.Hash    `json:"blobVersionedHashes"`
 }
 
 type Signature struct {
-	R       string
-	S       string
-	V       uint64
-	YParity Parity
+	R       string `json:"r"`
+	S       string `json:"s"`
+	V       hexutil.Uint64 `json:"v"`
+	YParity Parity `json:"yParity"`
 }
 
 type Parity struct {
-	Value bool
+	Value bool `json:"value"`
 }
 
 func Default() *Transactions {

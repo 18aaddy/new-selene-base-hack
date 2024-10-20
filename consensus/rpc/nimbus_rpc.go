@@ -92,7 +92,7 @@ func (n *NimbusRpc) GetOptimisticUpdate() (consensus_core.OptimisticUpdate, erro
 	var res OptimisticUpdateResponse
 	err := get(req, &res)
 	if err != nil {
-		return consensus_core.OptimisticUpdate{}, fmt.Errorf("finality update error: %w", err)
+		return consensus_core.OptimisticUpdate{}, fmt.Errorf("optimistic update error: %w", err)
 	}
 	return res.Data, nil
 }

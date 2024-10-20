@@ -2,8 +2,11 @@ package execution
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"log"
 	"math/big"
+	"time"
 
 	"errors"
 
@@ -29,8 +32,9 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"golang.org/x/crypto/sha3"
 )
-const MAX_SUPPORTED_LOGS_NUMBER = 5
-const KECCAK_EMPTY = "0x" 
+
+const MAX_SUPPORTED_LOGS_NUMBER = 100
+const KECCAK_EMPTY = "0x"
 
 type ExecutionClient struct {
 	Rpc   ExecutionRpc
@@ -48,6 +52,7 @@ func (e *ExecutionClient) New(rpc string, state *State) (*ExecutionClient, error
 		state: state,
 	}, nil
 }
+
 // CheckRpc checks the chain ID against the expected value
 func (e *ExecutionClient) CheckRpc(chainID uint64) error {
 	resultChan := make(chan struct {
@@ -70,10 +75,11 @@ func (e *ExecutionClient) CheckRpc(chainID uint64) error {
 	}
 	return nil
 }
+
 // GetAccount retrieves the account information
-func (e *ExecutionClient) GetAccount(address *seleneCommon.Address, slots []common.Hash, tag seleneCommon.BlockTag) (Account, error) { //Account from execution/types.go
+func (e *ExecutionClient) GetAccount(address *seleneCommon.Address, slots *[]common.Hash, tag seleneCommon.BlockTag) (Account, error) { //Account from execution/types.go
 	block := e.state.GetBlock(tag)
-	proof, err := e.Rpc.GetProof(address, &slots, block.Number)
+	proof, err := e.Rpc.GetProof(address, slots, block.Number)
 	if err != nil {
 		return Account{}, err
 	}
@@ -87,22 +93,22 @@ func (e *ExecutionClient) GetAccount(address *seleneCommon.Address, slots []comm
 		accountProofBytes[i] = hexByte
 	}
 	isValid, err := VerifyProof(accountProofBytes, block.StateRoot[:], accountPath, accountEncoded)
-	if err!=nil{
-		return Account{},err
+	if err != nil {
+		return Account{}, err
 	}
 	if !isValid {
 		return Account{}, NewInvalidAccountProofError(address.Addr)
 	}
-	// modify 
+	// modify
 	slotMap := []Slot{}
 	for _, storageProof := range proof.StorageProof {
-    	key, err := utils.Hex_str_to_bytes(storageProof.Key.Hex())
-    	if err != nil {
-        	return Account{}, err
-    	}
-		value,err := rlp.EncodeToBytes(storageProof.Value)
-		if err != nil {	
-			return Account{},err
+		key, err := utils.Hex_str_to_bytes(storageProof.Key.Hex())
+		if err != nil {
+			return Account{}, err
+		}
+		value, err := rlp.EncodeToBytes(storageProof.Value)
+		if err != nil {
+			return Account{}, err
 		}
 		keyHash := crypto.Keccak256(key)
 		proofBytes := make([][]byte, len(storageProof.Proof))
@@ -115,8 +121,8 @@ func (e *ExecutionClient) GetAccount(address *seleneCommon.Address, slots []comm
 			keyHash,
 			value,
 		)
-		if err!=nil{	
-			return Account{},err
+		if err != nil {
+			return Account{}, err
 		}
 		if !isValid {
 			return Account{}, fmt.Errorf("invalid storage proof for address: %v, key: %v", *address, storageProof.Key)
@@ -128,17 +134,17 @@ func (e *ExecutionClient) GetAccount(address *seleneCommon.Address, slots []comm
 	}
 	var code []byte
 	if bytes.Equal(proof.CodeHash.Bytes(), crypto.Keccak256([]byte(KECCAK_EMPTY))) {
-    	code = []byte{}
+		code = []byte{}
 	} else {
-    	code, err := e.Rpc.GetCode(address, block.Number)
-    	if err != nil {
-       		return Account{}, err
-    	}
-    	codeHash := crypto.Keccak256(code)
-    	if !bytes.Equal(proof.CodeHash.Bytes(), codeHash) {
-        	return Account{}, fmt.Errorf("code hash mismatch for address: %v, expected: %v, got: %v", 
-            *address, common.BytesToHash(codeHash).String(), proof.CodeHash.String())
-   		}
+		code, err := e.Rpc.GetCode(address, block.Number)
+		if err != nil {
+			return Account{}, err
+		}
+		codeHash := crypto.Keccak256(code)
+		if !bytes.Equal(proof.CodeHash.Bytes(), codeHash) {
+			return Account{}, fmt.Errorf("code hash mismatch for address: %v, expected: %v, got: %v",
+				*address, common.BytesToHash(codeHash).String(), proof.CodeHash.String())
+		}
 	}
 	account := Account{
 		Balance:     proof.Balance.ToBig(),
@@ -152,54 +158,54 @@ func (e *ExecutionClient) GetAccount(address *seleneCommon.Address, slots []comm
 }
 func (e *ExecutionClient) SendRawTransaction(bytes []byte) (common.Hash, error) {
 	var txHash common.Hash
-    var err error
-    done := make(chan bool)
-    go func() {
-        txHash, err = e.Rpc.SendRawTransaction(&bytes)
-        done <- true
-    }()
-    <-done
-    return txHash, err
+	var err error
+	done := make(chan bool)
+	go func() {
+		txHash, err = e.Rpc.SendRawTransaction(&bytes)
+		done <- true
+	}()
+	<-done
+	return txHash, err
 }
-func (e *ExecutionClient) GetBlock(tag seleneCommon.BlockTag,full_tx bool)(seleneCommon.Block, error) {
+func (e *ExecutionClient) GetBlock(tag seleneCommon.BlockTag, full_tx bool) (seleneCommon.Block, error) {
 	blockChan := make(chan seleneCommon.Block)
-    errChan := make(chan error)
-    go func() {
-        block:= e.state.GetBlock(tag)
-        blockChan <- *block
-    }()
-    select {
-    case block := <-blockChan:
-        if !full_tx {
-            block.Transactions = seleneCommon.Transactions{Hashes: block.Transactions.HashesFunc()}
-        }
-        return block, nil
-    case err := <-errChan:
-        return seleneCommon.Block{}, err
-    }
+	errChan := make(chan error)
+	go func() {
+		block := e.state.GetBlock(tag)
+		blockChan <- *block
+	}()
+	select {
+	case block := <-blockChan:
+		if !full_tx {
+			block.Transactions = seleneCommon.Transactions{Hashes: block.Transactions.HashesFunc()}
+		}
+		return block, nil
+	case err := <-errChan:
+		return seleneCommon.Block{}, err
+	}
 }
-func (e *ExecutionClient) GetBlockByHash(hash common.Hash,full_tx bool) (seleneCommon.Block,error){	
+func (e *ExecutionClient) GetBlockByHash(hash common.Hash, full_tx bool) (seleneCommon.Block, error) {
 	blockChan := make(chan seleneCommon.Block)
-    errChan := make(chan error)
-    go func() {
-        block := e.state.GetBlockByHash(hash)
-        blockChan <- *block
-    }()
-    select {
-    case block := <-blockChan:
-        if !full_tx {
-            block.Transactions = seleneCommon.Transactions{Hashes: block.Transactions.HashesFunc()}
-        }
-        return block, nil
-    case err := <-errChan:
-        return seleneCommon.Block{}, err
-    }
+	errChan := make(chan error)
+	go func() {
+		block := e.state.GetBlockByHash(hash)
+		blockChan <- *block
+	}()
+	select {
+	case block := <-blockChan:
+		if !full_tx {
+			block.Transactions = seleneCommon.Transactions{Hashes: block.Transactions.HashesFunc()}
+		}
+		return block, nil
+	case err := <-errChan:
+		return seleneCommon.Block{}, err
+	}
 }
-func (e *ExecutionClient) GetTransactionByBlockHashAndIndex(blockHash common.Hash,index uint64) (seleneCommon.Transaction,error){
+func (e *ExecutionClient) GetTransactionByBlockHashAndIndex(blockHash common.Hash, index uint64) (seleneCommon.Transaction, error) {
 	txChan := make(chan seleneCommon.Transaction)
 	errChan := make(chan error)
 	go func() {
-		tx:= e.state.GetTransactionByBlockAndIndex(blockHash,index)
+		tx := e.state.GetTransactionByBlockAndIndex(blockHash, index)
 		txChan <- *tx
 	}()
 	select {
@@ -210,7 +216,7 @@ func (e *ExecutionClient) GetTransactionByBlockHashAndIndex(blockHash common.Has
 	}
 
 }
-func (e *ExecutionClient) GetTransactionReceipt(txHash common.Hash) (types.Receipt,error) {
+func (e *ExecutionClient) GetTransactionReceipt(txHash common.Hash) (types.Receipt, error) {
 	receiptChan := make(chan types.Receipt)
 	errChan := make(chan error)
 	// var receipt types.Receipt
@@ -224,16 +230,16 @@ func (e *ExecutionClient) GetTransactionReceipt(txHash common.Hash) (types.Recei
 	}()
 	select {
 	case receipt := <-receiptChan:
-		blocknumber:=receipt.BlockNumber
+		blocknumber := receipt.BlockNumber
 		blockChan := make(chan seleneCommon.Block)
-    	errChan := make(chan error)
-    	go func() {
+		errChan := make(chan error)
+		go func() {
 			block := e.state.GetBlock(seleneCommon.BlockTag{Number: blocknumber.Uint64()})
 			blockChan <- *block
-    	}()
-    	select {
-    	case block := <-blockChan:
-        	txHashes := block.Transactions.Hashes
+		}()
+		select {
+		case block := <-blockChan:
+			txHashes := block.Transactions.Hashes
 			receiptsChan := make(chan types.Receipt)
 			receiptsErrChan := make(chan error)
 			for _, hash := range txHashes {
@@ -269,33 +275,32 @@ func (e *ExecutionClient) GetTransactionReceipt(txHash common.Hash) (types.Recei
 				return types.Receipt{}, err
 			}
 
-
 			if [32]byte(expectedReceiptRoot.Bytes()) != block.ReceiptsRoot || !contains(receipts, receipt) {
 				return types.Receipt{}, fmt.Errorf("receipt root mismatch: %s", txHash.String())
 			}
 
 			return receipt, nil
 
-    	case err := <-errChan:
-        	return types.Receipt{}, err
-    	}		
+		case err := <-errChan:
+			return types.Receipt{}, err
+		}
 	case err := <-errChan:
 		return types.Receipt{}, err
 	}
 }
 func (e *ExecutionClient) GetTransaction(hash common.Hash) (seleneCommon.Transaction, error) {
-    txChan := make(chan seleneCommon.Transaction)
-    errChan := make(chan error)
-    go func() {
-        tx := e.state.GetTransaction(hash)
-        txChan <- *tx
-    }()
-    select {
-    case tx := <-txChan:
-        return tx, nil
-    case err := <-errChan:
-        return seleneCommon.Transaction{}, err
-    }
+	txChan := make(chan seleneCommon.Transaction)
+	errChan := make(chan error)
+	go func() {
+		tx := e.state.GetTransaction(hash)
+		txChan <- *tx
+	}()
+	select {
+	case tx := <-txChan:
+		return tx, nil
+	case err := <-errChan:
+		return seleneCommon.Transaction{}, err
+	}
 }
 func (e *ExecutionClient) GetLogs(filter ethereum.FilterQuery) ([]types.Log, error) {
 	if filter.ToBlock == nil && filter.BlockHash == nil {
@@ -318,10 +323,10 @@ func (e *ExecutionClient) GetLogs(filter ethereum.FilterQuery) ([]types.Log, err
 	select {
 	case logs := <-logsChan:
 		if len(logs) > MAX_SUPPORTED_LOGS_NUMBER {
-			return nil, &ExecutionError{
-				Kind:    "TooManyLogs",
-				Details: fmt.Sprintf("Too many logs to prove: %d, max: %d", len(logs), MAX_SUPPORTED_LOGS_NUMBER),
-			}
+			return nil, errors.New("logs exceed max supported logs number") // &ExecutionError{
+			// 	Kind:    "TooManyLogs",
+			// 	Details: fmt.Sprintf("Too many logs to prove: %d, max: %d", len(logs), MAX_SUPPORTED_LOGS_NUMBER),
+			// }
 		}
 		logPtrs := make([]*types.Log, len(logs))
 		for i := range logs {
@@ -384,7 +389,7 @@ func (e *ExecutionClient) UninstallFilter(filterID *uint256.Int) (bool, error) {
 }
 func (e *ExecutionClient) GetNewFilter(filter ethereum.FilterQuery) (uint256.Int, error) {
 	if filter.ToBlock == nil && filter.BlockHash == nil {
-		block:= e.state.LatestBlockNumber()
+		block := e.state.LatestBlockNumber()
 		filter.ToBlock = new(big.Int).SetUint64(*block)
 		if filter.FromBlock == nil {
 			filter.FromBlock = new(big.Int).SetUint64(*block)
@@ -460,7 +465,7 @@ func (e *ExecutionClient) verifyLogs(logs []*types.Log) error {
 			case receipt := <-receiptSubChan:
 				receiptLogsEncoded := make([][]byte, len(receipt.Logs))
 				for i, receiptLog := range receipt.Logs {
-					receiptLogsEncoded[i] = receiptLog.Data 
+					receiptLogsEncoded[i] = receiptLog.Data
 				}
 				logEncoded := log.Data
 				found := false
@@ -489,56 +494,58 @@ func (e *ExecutionClient) verifyLogs(logs []*types.Log) error {
 	return nil
 }
 func encodeReceipt(receipt *types.Receipt) ([]byte, error) {
-    var stream []interface{}
-    stream = append(stream, receipt.Status, receipt.CumulativeGasUsed, receipt.Bloom, receipt.Logs)
-    legacyReceiptEncoded, err := rlp.EncodeToBytes(stream)
-    if err != nil {
-        return nil, err
-    }
-    txType := &receipt.Type
-    if *txType == 0 {
-        return legacyReceiptEncoded, nil
-    }
-    txTypeBytes := []byte{*txType}
-    return append(txTypeBytes, legacyReceiptEncoded...), nil
+	var stream []interface{}
+	stream = append(stream, receipt.Status, receipt.CumulativeGasUsed, receipt.Bloom, receipt.Logs)
+	legacyReceiptEncoded, err := rlp.EncodeToBytes(stream)
+	if err != nil {
+		return nil, err
+	}
+	txType := &receipt.Type
+	if *txType == 0 {
+		return legacyReceiptEncoded, nil
+	}
+	txTypeBytes := []byte{*txType}
+	return append(txTypeBytes, legacyReceiptEncoded...), nil
 }
+
 // need to confirm if TxHash is actually used as the key to calculate the receipt root or not
 func CalculateReceiptRoot(receipts [][]byte) (common.Hash, error) {
-    if len(receipts) == 0 {
-        return common.Hash{}, errors.New("no receipts to calculate root")
-    }
-    
-    var receiptHashes []common.Hash
-    for _, receipt := range receipts {
-        receiptHash, err := rlpHash(receipt) 
-        if err != nil {
-            return common.Hash{}, err
-        }
-        receiptHashes = append(receiptHashes, receiptHash)
-    }
-    return calculateMerkleRoot(receiptHashes), nil
+	if len(receipts) == 0 {
+		return common.Hash{}, errors.New("no receipts to calculate root")
+	}
+
+	var receiptHashes []common.Hash
+	for _, receipt := range receipts {
+		receiptHash, err := rlpHash(receipt)
+		if err != nil {
+			return common.Hash{}, err
+		}
+		receiptHashes = append(receiptHashes, receiptHash)
+	}
+	return calculateMerkleRoot(receiptHashes), nil
 }
 func rlpHash(obj interface{}) (common.Hash, error) {
-    encoded, err := rlp.EncodeToBytes(obj)
-    if err != nil {
-        return common.Hash{}, err
-    }
-    return crypto.Keccak256Hash(encoded), nil
+	encoded, err := rlp.EncodeToBytes(obj)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return crypto.Keccak256Hash(encoded), nil
 }
 func calculateMerkleRoot(hashes []common.Hash) common.Hash {
-    if len(hashes) == 1 {
-        return hashes[0] 
-    }
-    if len(hashes)%2 != 0 {
-        hashes = append(hashes, hashes[len(hashes)-1])
-    }
-    var newLevel []common.Hash
-    for i := 0; i < len(hashes); i += 2 {
-        combinedHash := crypto.Keccak256(append(hashes[i].Bytes(), hashes[i+1].Bytes()...))
-        newLevel = append(newLevel, common.BytesToHash(combinedHash))
-    }
-    return calculateMerkleRoot(newLevel)
+	if len(hashes) == 1 {
+		return hashes[0]
+	}
+	if len(hashes)%2 != 0 {
+		hashes = append(hashes, hashes[len(hashes)-1])
+	}
+	var newLevel []common.Hash
+	for i := 0; i < len(hashes); i += 2 {
+		combinedHash := crypto.Keccak256(append(hashes[i].Bytes(), hashes[i+1].Bytes()...))
+		newLevel = append(newLevel, common.BytesToHash(combinedHash))
+	}
+	return calculateMerkleRoot(newLevel)
 }
+
 // contains checks if a receipt is in the list of receipts
 func contains(receipts []types.Receipt, receipt types.Receipt) bool {
 	for _, r := range receipts {
@@ -588,8 +595,8 @@ type Account struct {
 	Slots       []Slot
 }
 type Slot struct {
-    Key   common.Hash   // The key (slot)
-    Value *big.Int  // The value (storage value)
+	Key   common.Hash // The key (slot)
+	Value *big.Int    // The value (storage value)
 }
 type CallOpts struct {
 	From     *common.Address `json:"from,omitempty"`
@@ -871,6 +878,7 @@ type TransactionLocation struct {
 	Block uint64
 	Index int
 }
+
 func NewState(historyLength uint64, blockChan <-chan *seleneCommon.Block, finalizedBlockChan <-chan *seleneCommon.Block) *State {
 	s := &State{
 		blocks:        make(map[uint64]*seleneCommon.Block),
@@ -918,6 +926,7 @@ func (s *State) PushBlock(block *seleneCommon.Block) {
 		}
 		s.removeBlock(oldestNumber)
 	}
+	fmt.Printf("Pushed Block: %d", block.Number)
 }
 func (s *State) PushFinalizedBlock(block *seleneCommon.Block) {
 	s.mu.Lock()
@@ -943,6 +952,233 @@ func (s *State) removeBlock(number uint64) {
 		}
 	}
 }
+
+//*********************************************/
+//*********************************************/
+//*********************************************/
+
+// Function to fetch block by number from RPC
+func fetchBlockFromRPC(client *rpc.Client, blockNumber seleneCommon.BlockTag) (*seleneCommon.Block, error) {
+	// First, get the raw JSON response
+	var rawJSON json.RawMessage
+	err := client.CallContext(context.Background(), &rawJSON, "eth_getBlockByNumber", blockNumber.String(), false)
+	if err != nil {
+		return nil, fmt.Errorf("RPC call failed: %w", err)
+	}
+
+	// Use our custom unmarshal function to parse the JSON into the Block struct
+	block, err := UnmarshalBlock(rawJSON)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal block: %w", err)
+	}
+
+	return block, nil
+}
+
+// rawBlock represents the raw JSON structure from eth_getBlockByNumber
+type rawBlock struct {
+	Number           *hexutil.Big    `json:"number"`
+	BaseFeePerGas    *hexutil.Big    `json:"baseFeePerGas"`
+	Difficulty       *hexutil.Big    `json:"difficulty"`
+	ExtraData        hexutil.Bytes   `json:"extraData"`
+	GasLimit         *hexutil.Uint64 `json:"gasLimit"`
+	GasUsed          *hexutil.Uint64 `json:"gasUsed"`
+	Hash             common.Hash     `json:"hash"`
+	LogsBloom        hexutil.Bytes   `json:"logsBloom"`
+	Miner            common.Address  `json:"miner"`
+	MixHash          common.Hash     `json:"mixHash"`
+	Nonce            string          `json:"nonce"`
+	ParentHash       common.Hash     `json:"parentHash"`
+	ReceiptsRoot     common.Hash     `json:"receiptsRoot"`
+	Sha3Uncles       common.Hash     `json:"sha3Uncles"`
+	Size             *hexutil.Uint64 `json:"size"`
+	StateRoot        common.Hash     `json:"stateRoot"`
+	Timestamp        *hexutil.Uint64 `json:"timestamp"`
+	TotalDifficulty  *hexutil.Big    `json:"totalDifficulty"`
+	Transactions     []interface{}   `json:"transactions"` // Can be either hashes or full transactions
+	TransactionsRoot common.Hash     `json:"transactionsRoot"`
+	Uncles           []common.Hash   `json:"uncles"`
+	BlobGasUsed      *hexutil.Uint64 `json:"blobGasUsed,omitempty"`
+	ExcessBlobGas    *hexutil.Uint64 `json:"excessBlobGas,omitempty"`
+}
+
+func UnmarshalBlock(data []byte) (*seleneCommon.Block, error) {
+	var raw rawBlock
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal block: %w", err)
+	}
+
+	block := &seleneCommon.Block{}
+
+	// Convert basic fields
+	if raw.Number != nil {
+		block.Number = raw.Number.ToInt().Uint64()
+	}
+	if raw.BaseFeePerGas != nil {
+		block.BaseFeePerGas.SetFromBig(raw.BaseFeePerGas.ToInt())
+	}
+	if raw.Difficulty != nil {
+		block.Difficulty.SetFromBig(raw.Difficulty.ToInt())
+	}
+	block.ExtraData = raw.ExtraData
+	if raw.GasLimit != nil {
+		block.GasLimit = uint64(*raw.GasLimit)
+	}
+	if raw.GasUsed != nil {
+		block.GasUsed = uint64(*raw.GasUsed)
+	}
+	copy(block.Hash[:], raw.Hash[:])
+	block.LogsBloom = raw.LogsBloom
+	copy(block.Miner.Addr[:], raw.Miner[:])
+	copy(block.MixHash[:], raw.MixHash[:])
+	block.Nonce = raw.Nonce
+	copy(block.ParentHash[:], raw.ParentHash[:])
+	copy(block.ReceiptsRoot[:], raw.ReceiptsRoot[:])
+	copy(block.Sha3Uncles[:], raw.Sha3Uncles[:])
+	if raw.Size != nil {
+		block.Size = uint64(*raw.Size)
+	}
+	copy(block.StateRoot[:], raw.StateRoot[:])
+	if raw.Timestamp != nil {
+		block.Timestamp = uint64(*raw.Timestamp)
+	}
+	if raw.TotalDifficulty != nil {
+		block.TotalDifficulty = new(uint256.Int)
+		block.TotalDifficulty.SetFromBig(raw.TotalDifficulty.ToInt())
+	}
+	copy(block.TransactionsRoot[:], raw.TransactionsRoot[:])
+
+	// Handle Transactions
+	block.Transactions = seleneCommon.Transactions{}
+	for _, tx := range raw.Transactions {
+		switch v := tx.(type) {
+		case string:
+			// It's a transaction hash
+			var hash [32]byte
+			h := common.HexToHash(v)
+			copy(hash[:], h[:])
+			block.Transactions.Hashes = append(block.Transactions.Hashes, hash)
+		case map[string]interface{}:
+			// It's a full transaction
+			txBytes, err := json.Marshal(v)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal transaction: %w", err)
+			}
+			var fullTx seleneCommon.Transaction
+			if err := json.Unmarshal(txBytes, &fullTx); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal transaction: %w", err)
+			}
+			block.Transactions.Full = append(block.Transactions.Full, fullTx)
+		}
+	}
+
+	// Handle Uncles
+	block.Uncles = raw.Uncles
+
+	// Handle optional fields
+	if raw.BlobGasUsed != nil {
+		value := uint64(*raw.BlobGasUsed)
+		block.BlobGasUsed = &value
+	}
+	if raw.ExcessBlobGas != nil {
+		value := uint64(*raw.ExcessBlobGas)
+		block.ExcessBlobGas = &value
+	}
+
+	return block, nil
+}
+
+// Periodically fetch and update state
+func FetchAndUpdateState(s *State, client *rpc.Client, blockChan chan<- *seleneCommon.Block) {
+    // First, get the latest block to know where we are
+    latestBlock, err := fetchBlockFromRPC(client, seleneCommon.BlockTag{Latest: true})
+    if err != nil {
+        log.Printf("Failed to fetch latest block: %v", err)
+        return
+    }
+
+    // Get the current state's latest block number
+    currentBlockNum := s.GetBlock(seleneCommon.BlockTag{Latest: true}).Number
+    if currentBlockNum == 0 {
+        // If we're starting fresh, start from the latest block
+        currentBlockNum = latestBlock.Number
+    }
+
+    ticker := time.NewTicker(13 * time.Second)
+    defer ticker.Stop()
+
+    const batchSize = 10 // Process up to 10 blocks at once
+    const maxRetries = 3
+    backoff := time.Second
+
+    for range ticker.C {
+        // Fetch latest block to check if there are new blocks
+        latestBlock, err := fetchBlockFromRPC(client, seleneCommon.BlockTag{Latest: true})
+        if err != nil {
+            log.Printf("Failed to fetch latest block: %v", err)
+            continue
+        }
+
+        // If we're caught up, use a longer backoff
+        if currentBlockNum > latestBlock.Number {
+            log.Printf("Caught up to latest block %d, waiting for new blocks...", latestBlock.Number)
+            time.Sleep(backoff)
+            continue
+        }
+
+        // Process blocks in batches
+        endBlock := currentBlockNum + batchSize
+        if endBlock > latestBlock.Number {
+            endBlock = latestBlock.Number
+        }
+
+        for blockNum := currentBlockNum; blockNum <= endBlock; blockNum++ {
+            // Add retry logic
+            var block *seleneCommon.Block
+            var fetchErr error
+            
+            for retry := 0; retry < maxRetries; retry++ {
+                blockTag := seleneCommon.BlockTag{Number: blockNum}
+                block, fetchErr = fetchBlockFromRPC(client, blockTag)
+                
+                if fetchErr == nil {
+                    break
+                }
+                
+                log.Printf("Failed to fetch block %d (attempt %d/%d): %v", 
+                    blockNum, retry+1, maxRetries, fetchErr)
+                time.Sleep(time.Second * time.Duration(retry+1))
+            }
+
+            if fetchErr != nil {
+                log.Printf("Failed to fetch block %d after %d attempts, skipping...", 
+                    blockNum, maxRetries)
+                continue
+            }
+
+            // Update state with the fetched block
+            s.PushBlock(block)
+            
+            // Send the block to the channel
+            select {
+            case blockChan <- block:
+                log.Printf("Sent block %v to channel\n", block.Number)
+            default:
+                log.Printf("Channel is full, skipping block %v\n", block.Number)
+            }
+
+            currentBlockNum = blockNum + 1
+        }
+
+        // Reset backoff if we successfully processed blocks
+        backoff = time.Second
+    }
+}
+
+//*********************************************/
+//*********************************************/
+//*********************************************/
+
 func (s *State) GetBlock(tag seleneCommon.BlockTag) *seleneCommon.Block {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -1205,10 +1441,10 @@ func DecodeRevertReason(data []byte) string {
 //**   Rpc.go *********///////
 ////////////////////////////////
 
-type ExecutionRpc interface{
-    New (rpc *string) (ExecutionRpc, error)
-	GetProof(address *seleneCommon.Address, slots *[]common.Hash,block uint64)  (EIP1186ProofResponse, error)
-	CreateAccessList(opts CallOpts,block seleneCommon.BlockTag) (types.AccessList, error)
+type ExecutionRpc interface {
+	New(rpc *string) (ExecutionRpc, error)
+	GetProof(address *seleneCommon.Address, slots *[]common.Hash, block uint64) (EIP1186ProofResponse, error)
+	CreateAccessList(opts CallOpts, block seleneCommon.BlockTag) (types.AccessList, error)
 	GetCode(address *seleneCommon.Address, block uint64) ([]byte, error)
 	SendRawTransaction(bytes *[]byte) (common.Hash, error)
 	GetTransactionReceipt(tx_hash *common.Hash) (types.Receipt, error)
@@ -1219,7 +1455,7 @@ type ExecutionRpc interface{
 	GetNewFilter(filter *ethereum.FilterQuery) (uint256.Int, error)
 	GetNewBlockFilter() (uint256.Int, error)
 	GetNewPendingTransactionFilter() (uint256.Int, error)
-    ChainId() (uint64, error)
+	ChainId() (uint64, error)
 	GetFeeHistory(block_count uint64, last_block uint64, reward_percentiles *[]float64) (FeeHistory, error)
 }
 
@@ -1251,15 +1487,17 @@ func (h *HttpRpc) GetProof(address *seleneCommon.Address, slots *[]common.Hash, 
 	})
 	// All arguments to rpc are expected to be in form of hex strings
 	var slotHex []string
-	for _, slot := range *slots {
-		slotHex = append(slotHex, slot.Hex())
+	if slots != nil {
+		for _, slot := range *slots {
+			slotHex = append(slotHex, slot.Hex())
+		}
 	}
 	if len(*slots) == 0 {
 		slotHex = []string{}
 	}
 	go func() {
 		var proof EIP1186ProofResponse
-		err := h.provider.Call(&proof, "eth_getProof", "0x" + hex.EncodeToString(address.Addr[:]), slotHex, toBlockNumArg(block))
+		err := h.provider.Call(&proof, "eth_getProof", "0x"+hex.EncodeToString(address.Addr[:]), slotHex, toBlockNumArg(block))
 		resultChan <- struct {
 			proof EIP1186ProofResponse
 			err   error
@@ -1273,8 +1511,7 @@ func (h *HttpRpc) GetProof(address *seleneCommon.Address, slots *[]common.Hash, 
 	return result.proof, nil
 }
 
-
-//TODO: CreateAccessList is throwing an error
+// TODO: CreateAccessList is throwing an error
 func (h *HttpRpc) CreateAccessList(opts CallOpts, block seleneCommon.BlockTag) (types.AccessList, error) {
 	resultChan := make(chan struct {
 		accessList types.AccessList
@@ -1306,7 +1543,7 @@ func (h *HttpRpc) GetCode(address *seleneCommon.Address, block uint64) ([]byte, 
 
 	go func() {
 		var code hexutil.Bytes
-		err := h.provider.Call(&code, "eth_getCode", "0x" + hex.EncodeToString(address.Addr[:]), toBlockNumArg(block))
+		err := h.provider.Call(&code, "eth_getCode", "0x"+hex.EncodeToString(address.Addr[:]), toBlockNumArg(block))
 		resultChan <- struct {
 			code hexutil.Bytes
 			err  error
