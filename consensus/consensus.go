@@ -30,6 +30,10 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/pkg/errors"
 	bls "github.com/protolambda/bls12-381-util"
+	databaseErrors "errors"
+	// "github.com/BlocSoc-iitr/selene/config"
+	// "os"
+	"path/filepath"
 )
 
 // Error definitions
@@ -63,8 +67,8 @@ type GenericUpdate struct {
 }
 
 type ConsensusClient struct {
-	BlockRecv          *common.Block
-	FinalizedBlockRecv *common.Block
+	BlockRecv          chan *common.Block
+	FinalizedBlockRecv chan *common.Block
 	CheckpointRecv     *[]byte
 	genesisTime        uint64
 	db                 Database
@@ -74,7 +78,7 @@ type Inner struct {
 	RPC                rpc.ConsensusRpc
 	Store              LightClientStore
 	lastCheckpoint     *[]byte
-	blockSend          chan common.Block
+	blockSend          chan *common.Block
 	finalizedBlockSend chan *common.Block
 	checkpointSend     chan *[]byte
 	Config             *config.Config
@@ -89,15 +93,18 @@ type LightClientStore struct {
 }
 
 func (con ConsensusClient) New(rpc *string, config config.Config) ConsensusClient {
-	blockSend := make(chan common.Block, 256)
+	blockSend := make(chan *common.Block, 256)
 	finalizedBlockSend := make(chan *common.Block)
 	checkpointSend := make(chan *[]byte)
 
-	db, err := con.db.New(&config)
+	_db, err := (&ConfigDB{}).New(&config)
 	if err != nil {
 		panic(err)
 	}
-
+	db, ok := _db.(*ConfigDB)
+	if !ok {
+		panic(errors.New("Expected ConfigDB instance"))
+	}
 	var initialCheckpoint [32]byte
 
 	if config.Checkpoint != nil {
@@ -153,13 +160,13 @@ func (con ConsensusClient) New(rpc *string, config config.Config) ConsensusClien
 		}
 	}()
 
-	blocksReceived := <-blockSend
-	finalizedBlocksReceived := <-finalizedBlockSend
+	// blocksReceived := <-blockSend
+	// finalizedBlocksReceived := <-finalizedBlockSend
 	checkpointsReceived := <-checkpointSend
 
 	return ConsensusClient{
-		BlockRecv:          &blocksReceived,
-		FinalizedBlockRecv: finalizedBlocksReceived,
+		BlockRecv:          blockSend,
+		FinalizedBlockRecv: finalizedBlockSend,
 		CheckpointRecv:     checkpointsReceived,
 		genesisTime:        config.Chain.GenesisTime,
 		db:                 db,
@@ -252,7 +259,7 @@ func sync_all_fallback(inner *Inner, chainID uint64) error {
 	return <-errorChan
 }
 
-func (in *Inner) New(rpcURL string, blockSend chan common.Block, finalizedBlockSend chan *common.Block, checkpointSend chan *[]byte, config *config.Config) *Inner {
+func (in *Inner) New(rpcURL string, blockSend chan *common.Block, finalizedBlockSend chan *common.Block, checkpointSend chan *[]byte, config *config.Config) *Inner {
 	rpcClient := rpc.NewConsensusRpc(rpcURL)
 
 	return &Inner{
@@ -301,7 +308,7 @@ func (in *Inner) get_execution_payload(slot *uint64) (*consensus_core.ExecutionP
 	}
 
 	block := <-blockChan
-	Gethblock, err := beacon.BlockFromJSON("capella", block.Hash)
+	Gethblock, err := beacon.BlockFromJSON("deneb", block.Hash)
 	if err != nil {
 		return nil, err
 	}
@@ -525,7 +532,7 @@ func (in *Inner) send_blocks() error {
 			log.Printf("Error converting payload to block: %v", err)
 			return
 		}
-		in.blockSend <- *block
+		in.blockSend <- block
 	}()
 
 	go func() {
@@ -637,6 +644,8 @@ func (in *Inner) verify_generic_update(update *GenericUpdate, expectedCurrentSlo
 		storePeriod := utils.CalcSyncPeriod(store.FinalizedHeader.Slot)
 		updateSigPeriod := utils.CalcSyncPeriod(update.SignatureSlot)
 
+		fmt.Printf("\n-----------------------------\n\n Finalized Header: %v,  update: %v \n\n-----------------------------\n", store.FinalizedHeader, update)
+
 		var validPeriod bool
 		if store.NextSyncCommitee != nil {
 			validPeriod = updateSigPeriod == storePeriod || updateSigPeriod == storePeriod+1
@@ -645,7 +654,8 @@ func (in *Inner) verify_generic_update(update *GenericUpdate, expectedCurrentSlo
 		}
 
 		if !validPeriod {
-			return ErrInvalidPeriod
+			fmt.Printf("\n\nYes this is the error. storePeriod,(store.FinalizedHeader.slot): %d, %v, updateSigPeriod, (update.SignatureSlot): %d, %v\n\n", storePeriod, store.FinalizedHeader.Slot, updateSigPeriod, update.SignatureSlot)
+			return ErrInvalidPeriod			//!
 		}
 
 		updateAttestedPeriod := utils.CalcSyncPeriod(update.AttestedHeader.Slot)
@@ -1175,3 +1185,68 @@ func toGethSyncCommittee(committee *consensus_core.SyncCommittee) *beacon.Serial
 	copy(s[512*48:], jsoncommittee.Aggregate[:])
 	return &s
 }
+
+// package consensus
+// import (
+// 	"errors"
+// 	"github.com/BlocSoc-iitr/selene/config"
+// 	"os"
+// 	"path/filepath"
+// )
+type Database interface {
+	New(cfg *config.Config) (Database, error)
+	SaveCheckpoint(checkpoint []byte) error
+	LoadCheckpoint() ([]byte, error)
+}
+type FileDB struct {
+	DataDir           string
+	defaultCheckpoint [32]byte
+}
+func (f *FileDB) New(cfg *config.Config) (Database, error) {
+	if cfg.DataDir == nil || *cfg.DataDir == "" {
+		return nil, databaseErrors.New("data directory is not set in the config")
+	}
+	return &FileDB{
+		DataDir:           *cfg.DataDir,
+		defaultCheckpoint: cfg.DefaultCheckpoint,
+	}, nil
+}
+func (f *FileDB) SaveCheckpoint(checkpoint []byte) error {
+	err := os.MkdirAll(f.DataDir, os.ModePerm)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(f.DataDir, "checkpoint"), checkpoint, 0644)
+}
+func (f *FileDB) LoadCheckpoint() ([]byte, error) {
+	data, err := os.ReadFile(filepath.Join(f.DataDir, "checkpoint"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return f.defaultCheckpoint[:], nil
+		}
+		return nil, err
+	}
+	if len(data) == 32 {
+		return data, nil
+	}
+	return f.defaultCheckpoint[:], nil
+}
+type ConfigDB struct {
+	checkpoint [32]byte
+}
+func (c *ConfigDB) New(cfg *config.Config) (Database, error) {
+	checkpoint := cfg.DefaultCheckpoint
+	if cfg.DataDir == nil {
+		return nil, databaseErrors.New("data directory is not set in the config")
+	}
+	return &ConfigDB{
+		checkpoint: checkpoint,
+	}, nil
+}
+func (c *ConfigDB) SaveCheckpoint(checkpoint []byte) error {
+	return nil
+}
+func (c *ConfigDB) LoadCheckpoint() ([]byte, error) {
+	return c.checkpoint[:], nil
+}
+

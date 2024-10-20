@@ -10,6 +10,7 @@ require (
 	github.com/kilic/bls12-381 v0.1.0
 	github.com/pkg/errors v0.9.1
 	github.com/protolambda/bls12-381-util v0.1.0
+	github.com/sirupsen/logrus v1.9.3
 	github.com/spf13/viper v1.19.0
 	github.com/stretchr/testify v1.9.0
 	github.com/wealdtech/go-merkletree v1.0.0

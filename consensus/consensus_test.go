@@ -9,6 +9,7 @@ import (
 	"github.com/BlocSoc-iitr/selene/config"
 	"github.com/BlocSoc-iitr/selene/consensus/consensus_core"
 	"github.com/BlocSoc-iitr/selene/utils"
+	"github.com/stretchr/testify/assert"
 )
 
 func GetClient(strictCheckpointAge bool, sync bool) (*Inner, error) {
@@ -36,7 +37,7 @@ func GetClient(strictCheckpointAge bool, sync bool) (*Inner, error) {
 		log.Fatalf("failed to decode checkpoint: %v", err)
 	}
 
-	blockSend := make(chan common.Block, 256)
+	blockSend := make(chan *common.Block, 256)
 	finalizedBlockSend := make(chan *common.Block)
 	channelSend := make(chan *[]byte)
 
@@ -64,7 +65,7 @@ func GetClient(strictCheckpointAge bool, sync bool) (*Inner, error) {
 // testVerifyUpdate runs the test and returns its result via a channel (no inputs required).
 func TestVerifyUpdate(t *testing.T) {
 	//Get the client
-	client, err := GetClient(false, false)
+	client, err := GetNewClient(false, false)
 	if err != nil {
 		t.Fatalf("failed to get client: %v", err)
 	}
@@ -93,7 +94,7 @@ func TestVerifyUpdate(t *testing.T) {
 }
 
 func TestVerifyUpdateInvalidCommittee(t *testing.T) {
-	client, err := GetClient(false, false)
+	client, err := GetNewClient(false, false)
 	if err != nil {
 		t.Fatalf("failed to get client: %v", err)
 	}
@@ -118,7 +119,7 @@ func TestVerifyUpdateInvalidCommittee(t *testing.T) {
 }
 
 func TestVerifyUpdateInvalidFinality(t *testing.T) {
-	client, err := GetClient(false, false)
+	client, err := GetNewClient(false, false)
 	if err != nil {
 		t.Fatalf("failed to get client: %v", err)
 	}
@@ -143,7 +144,7 @@ func TestVerifyUpdateInvalidFinality(t *testing.T) {
 }
 
 func TestVerifyUpdateInvalidSig(t *testing.T) {
-	client, err := GetClient(false, false)
+	client, err := GetNewClient(false, false)
 	if err != nil {
 		t.Fatalf("failed to get client: %v", err)
 	}
@@ -169,7 +170,7 @@ func TestVerifyUpdateInvalidSig(t *testing.T) {
 
 func TestVerifyFinality(t *testing.T) {
 	//Get the client
-	client, err := GetClient(false, true)
+	client, err := GetNewClient(false, true)
 	if err != nil {
 		t.Fatalf("failed to get client: %v", err)
 	}
@@ -189,7 +190,7 @@ func TestVerifyFinality(t *testing.T) {
 
 func TestVerifyFinalityInvalidFinality(t *testing.T) {
 	//Get the client
-	client, err := GetClient(false, true)
+	client, err := GetNewClient(false, true)
 	if err != nil {
 		t.Fatalf("failed to get client: %v", err)
 	}
@@ -218,7 +219,7 @@ func TestVerifyFinalityInvalidFinality(t *testing.T) {
 
 func TestVerifyFinalityInvalidSignature(t *testing.T) {
 	//Get the client
-	client, err := GetClient(false, true)
+	client, err := GetNewClient(false, true)
 	if err != nil {
 		t.Fatalf("failed to get client: %v", err)
 	}
@@ -247,7 +248,7 @@ func TestVerifyFinalityInvalidSignature(t *testing.T) {
 
 func TestVerifyOptimistic(t *testing.T) {
 	//Get the client
-	client, err := GetClient(false, true)
+	client, err := GetNewClient(false, true)
 	if err != nil {
 		t.Fatalf("failed to get client: %v", err)
 	}
@@ -266,7 +267,7 @@ func TestVerifyOptimistic(t *testing.T) {
 }
 func TestVerifyOptimisticInvalidSignature(t *testing.T) {
 	//Get the client
-	client, err := GetClient(false, true)
+	client, err := GetNewClient(false, true)
 	if err != nil {
 		t.Fatalf("failed to get client: %v", err)
 	}
@@ -305,7 +306,7 @@ func TestVerifyCheckpointAgeInvalid(t *testing.T) {
 	}()
 
 	// This should trigger a panic due to the invalid checkpoint age
-	_, err := GetClient(true, false)
+	_, err := GetNewClient(true, false)
 	if err != nil {
 		t.Fatalf("failed to get client: %v", err)
 	}
@@ -313,7 +314,7 @@ func TestVerifyCheckpointAgeInvalid(t *testing.T) {
 
 func TestSendBlocks(t *testing.T) {
 	//Get the client
-	client, err := GetClient(false, true)
+	client, err := GetNewClient(false, true)
 	if err != nil {
 		t.Fatalf("failed to get client: %v", err)
 	}
@@ -332,7 +333,7 @@ func TestSendBlocks(t *testing.T) {
 
 func TestGetPayloads(t *testing.T) {
 	//Get the client
-	client, err := GetClient(false, true)
+	client, err := GetNewClient(false, true)
 	if err != nil {
 		t.Fatalf("failed to get client: %v", err)
 	}
@@ -347,4 +348,62 @@ func TestGetPayloads(t *testing.T) {
 	if len(payloads) == 0 {
 		t.Fatalf("no payloads fetched")
 	}
+}
+
+
+func GetNewClient(strictCheckpointAge bool, sync bool) (*Inner, error) {
+	var n config.Network
+	baseConfig, err := n.BaseConfig("MAINNET")
+	if err != nil {
+		return nil, err
+	}
+
+	config := &config.Config{
+		ConsensusRpc:        "",
+		ExecutionRpc:        "",
+		Chain:               baseConfig.Chain,
+		Forks:               baseConfig.Forks,
+		StrictCheckpointAge: strictCheckpointAge,
+	}
+
+	checkpoint := "b21924031f38635d45297d68e7b7a408d40b194d435b25eeccad41c522841bd5"
+	consensusRpcUrl := "http://testing.mainnet.beacon-api.nimbus.team"
+	_ = "https://eth-mainnet.g.alchemy.com/v2/KLk2JrSPcjR8dp55N7XNTs9jeKTKHMoA"
+
+	//Decode the hex string into a byte slice
+	checkpointBytes, err := hex.DecodeString(checkpoint)
+	checkpointBytes32 := [32]byte{}
+	copy(checkpointBytes32[:], checkpointBytes)
+	if err != nil {
+		log.Fatalf("failed to decode checkpoint: %v", err)
+	}
+
+	blockSend := make(chan *common.Block, 256)
+	finalizedBlockSend := make(chan *common.Block)
+	channelSend := make(chan *[]byte)
+
+	In := Inner{}
+	client := In.New(
+		consensusRpcUrl,
+		blockSend,
+		finalizedBlockSend,
+		channelSend,
+		config,
+	)
+
+	if sync {
+		err := client.sync(checkpointBytes32)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		client.bootstrap(checkpointBytes32)
+	}
+
+	return client, nil
+}
+
+func TestNewConsensusClient(t *testing.T) {
+	_, err := GetNewClient(false, false)
+	assert.NoError(t, err, "Error in creating new client")
 }
