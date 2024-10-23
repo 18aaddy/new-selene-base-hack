@@ -109,7 +109,7 @@ func TestGetCode(t *testing.T) {
 		t.Errorf("Error in decoding address string:, %v", err)
 	}
 
-	var address seleneCommon.Address = seleneCommon.Address{[20]byte(addressBytes)}
+	var address seleneCommon.Address = seleneCommon.Address{Addr: [20]byte(addressBytes)}
 	blockNumber := 20983632
 
 	code, err := rpc.GetCode(&address, uint64(blockNumber))

@@ -2,11 +2,11 @@ package execution
 
 import (
 	"bytes"
-	"context"
+	// "context"
 	"fmt"
-	"log"
+	// "log"
 	"math/big"
-	"time"
+	// "time"
 
 	"errors"
 
@@ -23,7 +23,7 @@ import (
 	"encoding/json"
 	"reflect"
 	"strconv"
-	"sync"
+	// "sync"
 
 	"github.com/BlocSoc-iitr/selene/consensus/consensus_core"
 	consensusTypes "github.com/BlocSoc-iitr/selene/consensus/types"
@@ -322,6 +322,7 @@ func (e *ExecutionClient) GetLogs(filter ethereum.FilterQuery) ([]types.Log, err
 	}()
 	select {
 	case logs := <-logsChan:
+		logs = logs[:1]
 		if len(logs) > MAX_SUPPORTED_LOGS_NUMBER {
 			return nil, errors.New("logs exceed max supported logs number") // &ExecutionError{
 			// 	Kind:    "TooManyLogs",
@@ -866,427 +867,427 @@ func min(a, b int) int {
 //**   State.go *********///////
 ////////////////////////////////
 
-type State struct {
-	mu             sync.RWMutex
-	blocks         map[uint64]*seleneCommon.Block
-	finalizedBlock *seleneCommon.Block
-	hashes         map[[32]byte]uint64
-	txs            map[[32]byte]TransactionLocation
-	historyLength  uint64
-}
-type TransactionLocation struct {
-	Block uint64
-	Index int
-}
+// type State struct {
+// 	mu             sync.RWMutex
+// 	blocks         map[uint64]*seleneCommon.Block
+// 	finalizedBlock *seleneCommon.Block
+// 	hashes         map[[32]byte]uint64
+// 	txs            map[[32]byte]TransactionLocation
+// 	historyLength  uint64
+// }
+// type TransactionLocation struct {
+// 	Block uint64
+// 	Index int
+// }
 
-func NewState(historyLength uint64, blockChan <-chan *seleneCommon.Block, finalizedBlockChan <-chan *seleneCommon.Block) *State {
-	s := &State{
-		blocks:        make(map[uint64]*seleneCommon.Block),
-		hashes:        make(map[[32]byte]uint64),
-		txs:           make(map[[32]byte]TransactionLocation),
-		historyLength: historyLength,
-	}
-	go func() {
-		for {
-			select {
-			case block := <-blockChan:
-				if block != nil {
-					s.PushBlock(block)
-				}
-			case block := <-finalizedBlockChan:
-				if block != nil {
-					s.PushFinalizedBlock(block)
-				}
-			}
-		}
-	}()
+// func NewState(historyLength uint64, blockChan <-chan *seleneCommon.Block, finalizedBlockChan <-chan *seleneCommon.Block) *State {
+// 	s := &State{
+// 		blocks:        make(map[uint64]*seleneCommon.Block),
+// 		hashes:        make(map[[32]byte]uint64),
+// 		txs:           make(map[[32]byte]TransactionLocation),
+// 		historyLength: historyLength,
+// 	}
+// 	go func() {
+// 		for {
+// 			select {
+// 			case block := <-blockChan:
+// 				if block != nil {
+// 					s.PushBlock(block)
+// 				}
+// 			case block := <-finalizedBlockChan:
+// 				if block != nil {
+// 					s.PushFinalizedBlock(block)
+// 				}
+// 			}
+// 		}
+// 	}()
 
-	return s
-}
-func (s *State) PushBlock(block *seleneCommon.Block) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.hashes[block.Hash] = block.Number
-	for i, txHash := range block.Transactions.Hashes {
-		loc := TransactionLocation{
-			Block: block.Number,
-			Index: i,
-		}
-		s.txs[txHash] = loc
-	}
+// 	return s
+// }
+// func (s *State) PushBlock(block *seleneCommon.Block) {
+// 	s.mu.Lock()
+// 	defer s.mu.Unlock()
+// 	s.hashes[block.Hash] = block.Number
+// 	for i, txHash := range block.Transactions.Hashes {
+// 		loc := TransactionLocation{
+// 			Block: block.Number,
+// 			Index: i,
+// 		}
+// 		s.txs[txHash] = loc
+// 	}
 
-	s.blocks[block.Number] = block
+// 	s.blocks[block.Number] = block
 
-	for len(s.blocks) > int(s.historyLength) {
-		var oldestNumber uint64 = ^uint64(0)
-		for number := range s.blocks {
-			if number < oldestNumber {
-				oldestNumber = number
-			}
-		}
-		s.removeBlock(oldestNumber)
-	}
-	fmt.Printf("Pushed Block: %d", block.Number)
-}
-func (s *State) PushFinalizedBlock(block *seleneCommon.Block) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// 	for len(s.blocks) > int(s.historyLength) {
+// 		var oldestNumber uint64 = ^uint64(0)
+// 		for number := range s.blocks {
+// 			if number < oldestNumber {
+// 				oldestNumber = number
+// 			}
+// 		}
+// 		s.removeBlock(oldestNumber)
+// 	}
+// 	fmt.Printf("Pushed Block: %d", block.Number)
+// }
+// func (s *State) PushFinalizedBlock(block *seleneCommon.Block) {
+// 	s.mu.Lock()
+// 	defer s.mu.Unlock()
 
-	s.finalizedBlock = block
+// 	s.finalizedBlock = block
 
-	if oldBlock, exists := s.blocks[block.Number]; exists {
-		if oldBlock.Hash != block.Hash {
-			s.removeBlock(oldBlock.Number)
-			s.PushBlock(block)
-		}
-	} else {
-		s.PushBlock(block)
-	}
-}
-func (s *State) removeBlock(number uint64) {
-	if block, exists := s.blocks[number]; exists {
-		delete(s.blocks, number)
-		delete(s.hashes, block.Hash)
-		for _, txHash := range block.Transactions.Hashes {
-			delete(s.txs, txHash)
-		}
-	}
-}
+// 	if oldBlock, exists := s.blocks[block.Number]; exists {
+// 		if oldBlock.Hash != block.Hash {
+// 			s.removeBlock(oldBlock.Number)
+// 			s.PushBlock(block)
+// 		}
+// 	} else {
+// 		s.PushBlock(block)
+// 	}
+// }
+// func (s *State) removeBlock(number uint64) {
+// 	if block, exists := s.blocks[number]; exists {
+// 		delete(s.blocks, number)
+// 		delete(s.hashes, block.Hash)
+// 		for _, txHash := range block.Transactions.Hashes {
+// 			delete(s.txs, txHash)
+// 		}
+// 	}
+// }
 
-//*********************************************/
-//*********************************************/
-//*********************************************/
+// //*********************************************/
+// //*********************************************/
+// //*********************************************/
 
-// Function to fetch block by number from RPC
-func fetchBlockFromRPC(client *rpc.Client, blockNumber seleneCommon.BlockTag) (*seleneCommon.Block, error) {
-	// First, get the raw JSON response
-	var rawJSON json.RawMessage
-	err := client.CallContext(context.Background(), &rawJSON, "eth_getBlockByNumber", blockNumber.String(), false)
-	if err != nil {
-		return nil, fmt.Errorf("RPC call failed: %w", err)
-	}
+// // Function to fetch block by number from RPC
+// func fetchBlockFromRPC(client *rpc.Client, blockNumber seleneCommon.BlockTag) (*seleneCommon.Block, error) {
+// 	// First, get the raw JSON response
+// 	var rawJSON json.RawMessage
+// 	err := client.CallContext(context.Background(), &rawJSON, "eth_getBlockByNumber", blockNumber.String(), false)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("RPC call failed: %w", err)
+// 	}
 
-	// Use our custom unmarshal function to parse the JSON into the Block struct
-	block, err := UnmarshalBlock(rawJSON)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unmarshal block: %w", err)
-	}
+// 	// Use our custom unmarshal function to parse the JSON into the Block struct
+// 	block, err := UnmarshalBlock(rawJSON)
+// 	if err != nil {
+// 		return nil, fmt.Errorf("failed to unmarshal block: %w", err)
+// 	}
 
-	return block, nil
-}
+// 	return block, nil
+// }
 
-// rawBlock represents the raw JSON structure from eth_getBlockByNumber
-type rawBlock struct {
-	Number           *hexutil.Big    `json:"number"`
-	BaseFeePerGas    *hexutil.Big    `json:"baseFeePerGas"`
-	Difficulty       *hexutil.Big    `json:"difficulty"`
-	ExtraData        hexutil.Bytes   `json:"extraData"`
-	GasLimit         *hexutil.Uint64 `json:"gasLimit"`
-	GasUsed          *hexutil.Uint64 `json:"gasUsed"`
-	Hash             common.Hash     `json:"hash"`
-	LogsBloom        hexutil.Bytes   `json:"logsBloom"`
-	Miner            common.Address  `json:"miner"`
-	MixHash          common.Hash     `json:"mixHash"`
-	Nonce            string          `json:"nonce"`
-	ParentHash       common.Hash     `json:"parentHash"`
-	ReceiptsRoot     common.Hash     `json:"receiptsRoot"`
-	Sha3Uncles       common.Hash     `json:"sha3Uncles"`
-	Size             *hexutil.Uint64 `json:"size"`
-	StateRoot        common.Hash     `json:"stateRoot"`
-	Timestamp        *hexutil.Uint64 `json:"timestamp"`
-	TotalDifficulty  *hexutil.Big    `json:"totalDifficulty"`
-	Transactions     []interface{}   `json:"transactions"` // Can be either hashes or full transactions
-	TransactionsRoot common.Hash     `json:"transactionsRoot"`
-	Uncles           []common.Hash   `json:"uncles"`
-	BlobGasUsed      *hexutil.Uint64 `json:"blobGasUsed,omitempty"`
-	ExcessBlobGas    *hexutil.Uint64 `json:"excessBlobGas,omitempty"`
-}
+// // rawBlock represents the raw JSON structure from eth_getBlockByNumber
+// type rawBlock struct {
+// 	Number           *hexutil.Big    `json:"number"`
+// 	BaseFeePerGas    *hexutil.Big    `json:"baseFeePerGas"`
+// 	Difficulty       *hexutil.Big    `json:"difficulty"`
+// 	ExtraData        hexutil.Bytes   `json:"extraData"`
+// 	GasLimit         *hexutil.Uint64 `json:"gasLimit"`
+// 	GasUsed          *hexutil.Uint64 `json:"gasUsed"`
+// 	Hash             common.Hash     `json:"hash"`
+// 	LogsBloom        hexutil.Bytes   `json:"logsBloom"`
+// 	Miner            common.Address  `json:"miner"`
+// 	MixHash          common.Hash     `json:"mixHash"`
+// 	Nonce            string          `json:"nonce"`
+// 	ParentHash       common.Hash     `json:"parentHash"`
+// 	ReceiptsRoot     common.Hash     `json:"receiptsRoot"`
+// 	Sha3Uncles       common.Hash     `json:"sha3Uncles"`
+// 	Size             *hexutil.Uint64 `json:"size"`
+// 	StateRoot        common.Hash     `json:"stateRoot"`
+// 	Timestamp        *hexutil.Uint64 `json:"timestamp"`
+// 	TotalDifficulty  *hexutil.Big    `json:"totalDifficulty"`
+// 	Transactions     []interface{}   `json:"transactions"` // Can be either hashes or full transactions
+// 	TransactionsRoot common.Hash     `json:"transactionsRoot"`
+// 	Uncles           []common.Hash   `json:"uncles"`
+// 	BlobGasUsed      *hexutil.Uint64 `json:"blobGasUsed,omitempty"`
+// 	ExcessBlobGas    *hexutil.Uint64 `json:"excessBlobGas,omitempty"`
+// }
 
-func UnmarshalBlock(data []byte) (*seleneCommon.Block, error) {
-	var raw rawBlock
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal block: %w", err)
-	}
+// func UnmarshalBlock(data []byte) (*seleneCommon.Block, error) {
+// 	var raw rawBlock
+// 	if err := json.Unmarshal(data, &raw); err != nil {
+// 		return nil, fmt.Errorf("failed to unmarshal block: %w", err)
+// 	}
 
-	block := &seleneCommon.Block{}
+// 	block := &seleneCommon.Block{}
 
-	// Convert basic fields
-	if raw.Number != nil {
-		block.Number = raw.Number.ToInt().Uint64()
-	}
-	if raw.BaseFeePerGas != nil {
-		block.BaseFeePerGas.SetFromBig(raw.BaseFeePerGas.ToInt())
-	}
-	if raw.Difficulty != nil {
-		block.Difficulty.SetFromBig(raw.Difficulty.ToInt())
-	}
-	block.ExtraData = raw.ExtraData
-	if raw.GasLimit != nil {
-		block.GasLimit = uint64(*raw.GasLimit)
-	}
-	if raw.GasUsed != nil {
-		block.GasUsed = uint64(*raw.GasUsed)
-	}
-	copy(block.Hash[:], raw.Hash[:])
-	block.LogsBloom = raw.LogsBloom
-	copy(block.Miner.Addr[:], raw.Miner[:])
-	copy(block.MixHash[:], raw.MixHash[:])
-	block.Nonce = raw.Nonce
-	copy(block.ParentHash[:], raw.ParentHash[:])
-	copy(block.ReceiptsRoot[:], raw.ReceiptsRoot[:])
-	copy(block.Sha3Uncles[:], raw.Sha3Uncles[:])
-	if raw.Size != nil {
-		block.Size = uint64(*raw.Size)
-	}
-	copy(block.StateRoot[:], raw.StateRoot[:])
-	if raw.Timestamp != nil {
-		block.Timestamp = uint64(*raw.Timestamp)
-	}
-	if raw.TotalDifficulty != nil {
-		block.TotalDifficulty = new(uint256.Int)
-		block.TotalDifficulty.SetFromBig(raw.TotalDifficulty.ToInt())
-	}
-	copy(block.TransactionsRoot[:], raw.TransactionsRoot[:])
+// 	// Convert basic fields
+// 	if raw.Number != nil {
+// 		block.Number = raw.Number.ToInt().Uint64()
+// 	}
+// 	if raw.BaseFeePerGas != nil {
+// 		block.BaseFeePerGas.SetFromBig(raw.BaseFeePerGas.ToInt())
+// 	}
+// 	if raw.Difficulty != nil {
+// 		block.Difficulty.SetFromBig(raw.Difficulty.ToInt())
+// 	}
+// 	block.ExtraData = raw.ExtraData
+// 	if raw.GasLimit != nil {
+// 		block.GasLimit = uint64(*raw.GasLimit)
+// 	}
+// 	if raw.GasUsed != nil {
+// 		block.GasUsed = uint64(*raw.GasUsed)
+// 	}
+// 	copy(block.Hash[:], raw.Hash[:])
+// 	block.LogsBloom = raw.LogsBloom
+// 	copy(block.Miner.Addr[:], raw.Miner[:])
+// 	copy(block.MixHash[:], raw.MixHash[:])
+// 	block.Nonce = raw.Nonce
+// 	copy(block.ParentHash[:], raw.ParentHash[:])
+// 	copy(block.ReceiptsRoot[:], raw.ReceiptsRoot[:])
+// 	copy(block.Sha3Uncles[:], raw.Sha3Uncles[:])
+// 	if raw.Size != nil {
+// 		block.Size = uint64(*raw.Size)
+// 	}
+// 	copy(block.StateRoot[:], raw.StateRoot[:])
+// 	if raw.Timestamp != nil {
+// 		block.Timestamp = uint64(*raw.Timestamp)
+// 	}
+// 	if raw.TotalDifficulty != nil {
+// 		block.TotalDifficulty = new(uint256.Int)
+// 		block.TotalDifficulty.SetFromBig(raw.TotalDifficulty.ToInt())
+// 	}
+// 	copy(block.TransactionsRoot[:], raw.TransactionsRoot[:])
 
-	// Handle Transactions
-	block.Transactions = seleneCommon.Transactions{}
-	for _, tx := range raw.Transactions {
-		switch v := tx.(type) {
-		case string:
-			// It's a transaction hash
-			var hash [32]byte
-			h := common.HexToHash(v)
-			copy(hash[:], h[:])
-			block.Transactions.Hashes = append(block.Transactions.Hashes, hash)
-		case map[string]interface{}:
-			// It's a full transaction
-			txBytes, err := json.Marshal(v)
-			if err != nil {
-				return nil, fmt.Errorf("failed to marshal transaction: %w", err)
-			}
-			var fullTx seleneCommon.Transaction
-			if err := json.Unmarshal(txBytes, &fullTx); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal transaction: %w", err)
-			}
-			block.Transactions.Full = append(block.Transactions.Full, fullTx)
-		}
-	}
+// 	// Handle Transactions
+// 	block.Transactions = seleneCommon.Transactions{}
+// 	for _, tx := range raw.Transactions {
+// 		switch v := tx.(type) {
+// 		case string:
+// 			// It's a transaction hash
+// 			var hash [32]byte
+// 			h := common.HexToHash(v)
+// 			copy(hash[:], h[:])
+// 			block.Transactions.Hashes = append(block.Transactions.Hashes, hash)
+// 		case map[string]interface{}:
+// 			// It's a full transaction
+// 			txBytes, err := json.Marshal(v)
+// 			if err != nil {
+// 				return nil, fmt.Errorf("failed to marshal transaction: %w", err)
+// 			}
+// 			var fullTx seleneCommon.Transaction
+// 			if err := json.Unmarshal(txBytes, &fullTx); err != nil {
+// 				return nil, fmt.Errorf("failed to unmarshal transaction: %w", err)
+// 			}
+// 			block.Transactions.Full = append(block.Transactions.Full, fullTx)
+// 		}
+// 	}
 
-	// Handle Uncles
-	block.Uncles = raw.Uncles
+// 	// Handle Uncles
+// 	block.Uncles = raw.Uncles
 
-	// Handle optional fields
-	if raw.BlobGasUsed != nil {
-		value := uint64(*raw.BlobGasUsed)
-		block.BlobGasUsed = &value
-	}
-	if raw.ExcessBlobGas != nil {
-		value := uint64(*raw.ExcessBlobGas)
-		block.ExcessBlobGas = &value
-	}
+// 	// Handle optional fields
+// 	if raw.BlobGasUsed != nil {
+// 		value := uint64(*raw.BlobGasUsed)
+// 		block.BlobGasUsed = &value
+// 	}
+// 	if raw.ExcessBlobGas != nil {
+// 		value := uint64(*raw.ExcessBlobGas)
+// 		block.ExcessBlobGas = &value
+// 	}
 
-	return block, nil
-}
+// 	return block, nil
+// }
 
-// Periodically fetch and update state
-func FetchAndUpdateState(s *State, client *rpc.Client, blockChan chan<- *seleneCommon.Block) {
-    // First, get the latest block to know where we are
-    latestBlock, err := fetchBlockFromRPC(client, seleneCommon.BlockTag{Latest: true})
-    if err != nil {
-        log.Printf("Failed to fetch latest block: %v", err)
-        return
-    }
+// // Periodically fetch and update state
+// func FetchAndUpdateState(s *State, client *rpc.Client, blockChan chan<- *seleneCommon.Block) {
+//     // First, get the latest block to know where we are
+//     latestBlock, err := fetchBlockFromRPC(client, seleneCommon.BlockTag{Latest: true})
+//     if err != nil {
+//         log.Printf("Failed to fetch latest block: %v", err)
+//         return
+//     }
 
-    // Get the current state's latest block number
-    currentBlockNum := s.GetBlock(seleneCommon.BlockTag{Latest: true}).Number
-    if currentBlockNum == 0 {
-        // If we're starting fresh, start from the latest block
-        currentBlockNum = latestBlock.Number
-    }
+//     // Get the current state's latest block number
+//     currentBlockNum := s.GetBlock(seleneCommon.BlockTag{Latest: true}).Number
+//     if currentBlockNum == 0 {
+//         // If we're starting fresh, start from the latest block
+//         currentBlockNum = latestBlock.Number
+//     }
 
-    ticker := time.NewTicker(13 * time.Second)
-    defer ticker.Stop()
+//     ticker := time.NewTicker(13 * time.Second)
+//     defer ticker.Stop()
 
-    const batchSize = 10 // Process up to 10 blocks at once
-    const maxRetries = 3
-    backoff := time.Second
+//     const batchSize = 10 // Process up to 10 blocks at once
+//     const maxRetries = 3
+//     backoff := time.Second
 
-    for range ticker.C {
-        // Fetch latest block to check if there are new blocks
-        latestBlock, err := fetchBlockFromRPC(client, seleneCommon.BlockTag{Latest: true})
-        if err != nil {
-            log.Printf("Failed to fetch latest block: %v", err)
-            continue
-        }
+//     for range ticker.C {
+//         // Fetch latest block to check if there are new blocks
+//         latestBlock, err := fetchBlockFromRPC(client, seleneCommon.BlockTag{Latest: true})
+//         if err != nil {
+//             log.Printf("Failed to fetch latest block: %v", err)
+//             continue
+//         }
 
-        // If we're caught up, use a longer backoff
-        if currentBlockNum > latestBlock.Number {
-            log.Printf("Caught up to latest block %d, waiting for new blocks...", latestBlock.Number)
-            time.Sleep(backoff)
-            continue
-        }
+//         // If we're caught up, use a longer backoff
+//         if currentBlockNum > latestBlock.Number {
+//             log.Printf("Caught up to latest block %d, waiting for new blocks...", latestBlock.Number)
+//             time.Sleep(backoff)
+//             continue
+//         }
 
-        // Process blocks in batches
-        endBlock := currentBlockNum + batchSize
-        if endBlock > latestBlock.Number {
-            endBlock = latestBlock.Number
-        }
+//         // Process blocks in batches
+//         endBlock := currentBlockNum + batchSize
+//         if endBlock > latestBlock.Number {
+//             endBlock = latestBlock.Number
+//         }
 
-        for blockNum := currentBlockNum; blockNum <= endBlock; blockNum++ {
-            // Add retry logic
-            var block *seleneCommon.Block
-            var fetchErr error
+//         for blockNum := currentBlockNum; blockNum <= endBlock; blockNum++ {
+//             // Add retry logic
+//             var block *seleneCommon.Block
+//             var fetchErr error
             
-            for retry := 0; retry < maxRetries; retry++ {
-                blockTag := seleneCommon.BlockTag{Number: blockNum}
-                block, fetchErr = fetchBlockFromRPC(client, blockTag)
+//             for retry := 0; retry < maxRetries; retry++ {
+//                 blockTag := seleneCommon.BlockTag{Number: blockNum}
+//                 block, fetchErr = fetchBlockFromRPC(client, blockTag)
                 
-                if fetchErr == nil {
-                    break
-                }
+//                 if fetchErr == nil {
+//                     break
+//                 }
                 
-                log.Printf("Failed to fetch block %d (attempt %d/%d): %v", 
-                    blockNum, retry+1, maxRetries, fetchErr)
-                time.Sleep(time.Second * time.Duration(retry+1))
-            }
+//                 log.Printf("Failed to fetch block %d (attempt %d/%d): %v", 
+//                     blockNum, retry+1, maxRetries, fetchErr)
+//                 time.Sleep(time.Second * time.Duration(retry+1))
+//             }
 
-            if fetchErr != nil {
-                log.Printf("Failed to fetch block %d after %d attempts, skipping...", 
-                    blockNum, maxRetries)
-                continue
-            }
+//             if fetchErr != nil {
+//                 log.Printf("Failed to fetch block %d after %d attempts, skipping...", 
+//                     blockNum, maxRetries)
+//                 continue
+//             }
 
-            // Update state with the fetched block
-            s.PushBlock(block)
+//             // Update state with the fetched block
+//             s.PushBlock(block)
             
-            // Send the block to the channel
-            select {
-            case blockChan <- block:
-                log.Printf("Sent block %v to channel\n", block.Number)
-            default:
-                log.Printf("Channel is full, skipping block %v\n", block.Number)
-            }
+//             // Send the block to the channel
+//             select {
+//             case blockChan <- block:
+//                 log.Printf("Sent block %v to channel\n", block.Number)
+//             default:
+//                 log.Printf("Channel is full, skipping block %v\n", block.Number)
+//             }
 
-            currentBlockNum = blockNum + 1
-        }
+//             currentBlockNum = blockNum + 1
+//         }
 
-        // Reset backoff if we successfully processed blocks
-        backoff = time.Second
-    }
-}
+//         // Reset backoff if we successfully processed blocks
+//         backoff = time.Second
+//     }
+// }
 
-//*********************************************/
-//*********************************************/
-//*********************************************/
+// //*********************************************/
+// //*********************************************/
+// //*********************************************/
 
-func (s *State) GetBlock(tag seleneCommon.BlockTag) *seleneCommon.Block {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+// func (s *State) GetBlock(tag seleneCommon.BlockTag) *seleneCommon.Block {
+// 	s.mu.RLock()
+// 	defer s.mu.RUnlock()
 
-	if tag.Latest {
-		var latestNumber uint64
-		var latestBlock *seleneCommon.Block
-		for number, block := range s.blocks {
-			if number > latestNumber {
-				latestNumber = number
-				latestBlock = block
-			}
-		}
-		return latestBlock
-	} else if tag.Finalized {
-		return s.finalizedBlock
-	} else {
-		return s.blocks[tag.Number]
-	}
-}
-func (s *State) GetBlockByHash(hash [32]byte) *seleneCommon.Block {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+// 	if tag.Latest {
+// 		var latestNumber uint64
+// 		var latestBlock *seleneCommon.Block
+// 		for number, block := range s.blocks {
+// 			if number > latestNumber {
+// 				latestNumber = number
+// 				latestBlock = block
+// 			}
+// 		}
+// 		return latestBlock
+// 	} else if tag.Finalized {
+// 		return s.finalizedBlock
+// 	} else {
+// 		return s.blocks[tag.Number]
+// 	}
+// }
+// func (s *State) GetBlockByHash(hash [32]byte) *seleneCommon.Block {
+// 	s.mu.RLock()
+// 	defer s.mu.RUnlock()
 
-	if number, exists := s.hashes[hash]; exists {
-		return s.blocks[number]
-	}
-	return nil
-}
-func (s *State) GetTransaction(hash [32]byte) *seleneCommon.Transaction {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+// 	if number, exists := s.hashes[hash]; exists {
+// 		return s.blocks[number]
+// 	}
+// 	return nil
+// }
+// func (s *State) GetTransaction(hash [32]byte) *seleneCommon.Transaction {
+// 	s.mu.RLock()
+// 	defer s.mu.RUnlock()
 
-	if loc, exists := s.txs[hash]; exists {
-		if block, exists := s.blocks[loc.Block]; exists {
-			if len(block.Transactions.Full) > loc.Index {
-				return &block.Transactions.Full[loc.Index]
-			}
-		}
-	}
-	return nil
-}
-func (s *State) GetTransactionByBlockAndIndex(blockHash [32]byte, index uint64) *seleneCommon.Transaction {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+// 	if loc, exists := s.txs[hash]; exists {
+// 		if block, exists := s.blocks[loc.Block]; exists {
+// 			if len(block.Transactions.Full) > loc.Index {
+// 				return &block.Transactions.Full[loc.Index]
+// 			}
+// 		}
+// 	}
+// 	return nil
+// }
+// func (s *State) GetTransactionByBlockAndIndex(blockHash [32]byte, index uint64) *seleneCommon.Transaction {
+// 	s.mu.RLock()
+// 	defer s.mu.RUnlock()
 
-	if number, exists := s.hashes[blockHash]; exists {
-		if block, exists := s.blocks[number]; exists {
-			if int(index) < len(block.Transactions.Full) {
-				return &block.Transactions.Full[index]
-			}
-		}
-	}
-	return nil
-}
-func (s *State) GetStateRoot(tag seleneCommon.BlockTag) *[32]byte {
-	if block := s.GetBlock(tag); block != nil {
-		return &block.StateRoot
-	}
-	return nil
-}
-func (s *State) GetReceiptsRoot(tag seleneCommon.BlockTag) *[32]byte {
-	if block := s.GetBlock(tag); block != nil {
-		return &block.ReceiptsRoot
-	}
-	return nil
-}
-func (s *State) GetBaseFee(tag seleneCommon.BlockTag) *uint256.Int {
-	if block := s.GetBlock(tag); block != nil {
-		return &block.BaseFeePerGas
-	}
-	return nil
-}
-func (s *State) GetCoinbase(tag seleneCommon.BlockTag) *seleneCommon.Address {
-	if block := s.GetBlock(tag); block != nil {
-		return &block.Miner
-	}
-	return nil
-}
-func (s *State) LatestBlockNumber() *uint64 {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+// 	if number, exists := s.hashes[blockHash]; exists {
+// 		if block, exists := s.blocks[number]; exists {
+// 			if int(index) < len(block.Transactions.Full) {
+// 				return &block.Transactions.Full[index]
+// 			}
+// 		}
+// 	}
+// 	return nil
+// }
+// func (s *State) GetStateRoot(tag seleneCommon.BlockTag) *[32]byte {
+// 	if block := s.GetBlock(tag); block != nil {
+// 		return &block.StateRoot
+// 	}
+// 	return nil
+// }
+// func (s *State) GetReceiptsRoot(tag seleneCommon.BlockTag) *[32]byte {
+// 	if block := s.GetBlock(tag); block != nil {
+// 		return &block.ReceiptsRoot
+// 	}
+// 	return nil
+// }
+// func (s *State) GetBaseFee(tag seleneCommon.BlockTag) *uint256.Int {
+// 	if block := s.GetBlock(tag); block != nil {
+// 		return &block.BaseFeePerGas
+// 	}
+// 	return nil
+// }
+// func (s *State) GetCoinbase(tag seleneCommon.BlockTag) *seleneCommon.Address {
+// 	if block := s.GetBlock(tag); block != nil {
+// 		return &block.Miner
+// 	}
+// 	return nil
+// }
+// func (s *State) LatestBlockNumber() *uint64 {
+// 	s.mu.RLock()
+// 	defer s.mu.RUnlock()
 
-	var latestNumber uint64
-	for number := range s.blocks {
-		if number > latestNumber {
-			latestNumber = number
-		}
-	}
-	if latestNumber > 0 {
-		return &latestNumber
-	}
-	return nil
-}
-func (s *State) OldestBlockNumber() *uint64 {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	var oldestNumber uint64 = ^uint64(0)
-	for number := range s.blocks {
-		if number < oldestNumber {
-			oldestNumber = number
-		}
-	}
-	if oldestNumber < ^uint64(0) {
-		return &oldestNumber
-	}
-	return nil
-}
+// 	var latestNumber uint64
+// 	for number := range s.blocks {
+// 		if number > latestNumber {
+// 			latestNumber = number
+// 		}
+// 	}
+// 	if latestNumber > 0 {
+// 		return &latestNumber
+// 	}
+// 	return nil
+// }
+// func (s *State) OldestBlockNumber() *uint64 {
+// 	s.mu.RLock()
+// 	defer s.mu.RUnlock()
+// 	var oldestNumber uint64 = ^uint64(0)
+// 	for number := range s.blocks {
+// 		if number < oldestNumber {
+// 			oldestNumber = number
+// 		}
+// 	}
+// 	if oldestNumber < ^uint64(0) {
+// 		return &oldestNumber
+// 	}
+// 	return nil
+// }
 
 ////////////////////////////////
 //**   Errors.go *********///////
@@ -1463,377 +1464,377 @@ type ExecutionRpc interface {
 //**   Http_rpc.go *********///////
 ////////////////////////////////
 
-type HttpRpc struct {
-	url      string
-	provider *rpc.Client
-}
+// type HttpRpc struct {
+// 	url      string
+// 	provider *rpc.Client
+// }
 
-func (h *HttpRpc) New(rpcUrl *string) (ExecutionRpc, error) {
-	client, err := rpc.Dial(*rpcUrl)
-	if err != nil {
-		return nil, err
-	}
+// func (h *HttpRpc) New(rpcUrl *string) (ExecutionRpc, error) {
+// 	client, err := rpc.Dial(*rpcUrl)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	return &HttpRpc{
-		url:      *rpcUrl,
-		provider: client,
-	}, nil
-}
+// 	return &HttpRpc{
+// 		url:      *rpcUrl,
+// 		provider: client,
+// 	}, nil
+// }
 
-func (h *HttpRpc) GetProof(address *seleneCommon.Address, slots *[]common.Hash, block uint64) (EIP1186ProofResponse, error) {
-	resultChan := make(chan struct {
-		proof EIP1186ProofResponse
-		err   error
-	})
-	// All arguments to rpc are expected to be in form of hex strings
-	var slotHex []string
-	if slots != nil {
-		for _, slot := range *slots {
-			slotHex = append(slotHex, slot.Hex())
-		}
-	}
-	if len(*slots) == 0 {
-		slotHex = []string{}
-	}
-	go func() {
-		var proof EIP1186ProofResponse
-		err := h.provider.Call(&proof, "eth_getProof", "0x"+hex.EncodeToString(address.Addr[:]), slotHex, toBlockNumArg(block))
-		resultChan <- struct {
-			proof EIP1186ProofResponse
-			err   error
-		}{proof, err}
-		close(resultChan)
-	}()
-	result := <-resultChan
-	if result.err != nil {
-		return EIP1186ProofResponse{}, result.err
-	}
-	return result.proof, nil
-}
+// func (h *HttpRpc) GetProof(address *seleneCommon.Address, slots *[]common.Hash, block uint64) (EIP1186ProofResponse, error) {
+// 	resultChan := make(chan struct {
+// 		proof EIP1186ProofResponse
+// 		err   error
+// 	})
+// 	// All arguments to rpc are expected to be in form of hex strings
+// 	var slotHex []string
+// 	if slots != nil {
+// 		for _, slot := range *slots {
+// 			slotHex = append(slotHex, slot.Hex())
+// 		}
+// 	}
+// 	if len(*slots) == 0 {
+// 		slotHex = []string{}
+// 	}
+// 	go func() {
+// 		var proof EIP1186ProofResponse
+// 		err := h.provider.Call(&proof, "eth_getProof", "0x"+hex.EncodeToString(address.Addr[:]), slotHex, toBlockNumArg(block))
+// 		resultChan <- struct {
+// 			proof EIP1186ProofResponse
+// 			err   error
+// 		}{proof, err}
+// 		close(resultChan)
+// 	}()
+// 	result := <-resultChan
+// 	if result.err != nil {
+// 		return EIP1186ProofResponse{}, result.err
+// 	}
+// 	return result.proof, nil
+// }
 
-// TODO: CreateAccessList is throwing an error
-func (h *HttpRpc) CreateAccessList(opts CallOpts, block seleneCommon.BlockTag) (types.AccessList, error) {
-	resultChan := make(chan struct {
-		accessList types.AccessList
-		err        error
-	})
+// // TODO: CreateAccessList is throwing an error
+// func (h *HttpRpc) CreateAccessList(opts CallOpts, block seleneCommon.BlockTag) (types.AccessList, error) {
+// 	resultChan := make(chan struct {
+// 		accessList types.AccessList
+// 		err        error
+// 	})
 
-	go func() {
-		var accessList types.AccessList
-		err := h.provider.Call(&accessList, "eth_createAccessList", opts, block.String())
-		resultChan <- struct {
-			accessList types.AccessList
-			err        error
-		}{accessList, err}
-		close(resultChan)
-	}()
+// 	go func() {
+// 		var accessList types.AccessList
+// 		err := h.provider.Call(&accessList, "eth_createAccessList", opts, block.String())
+// 		resultChan <- struct {
+// 			accessList types.AccessList
+// 			err        error
+// 		}{accessList, err}
+// 		close(resultChan)
+// 	}()
 
-	result := <-resultChan
-	if result.err != nil {
-		return nil, result.err
-	}
-	return result.accessList, nil
-}
+// 	result := <-resultChan
+// 	if result.err != nil {
+// 		return nil, result.err
+// 	}
+// 	return result.accessList, nil
+// }
 
-func (h *HttpRpc) GetCode(address *seleneCommon.Address, block uint64) ([]byte, error) {
-	resultChan := make(chan struct {
-		code hexutil.Bytes
-		err  error
-	})
+// func (h *HttpRpc) GetCode(address *seleneCommon.Address, block uint64) ([]byte, error) {
+// 	resultChan := make(chan struct {
+// 		code hexutil.Bytes
+// 		err  error
+// 	})
 
-	go func() {
-		var code hexutil.Bytes
-		err := h.provider.Call(&code, "eth_getCode", "0x"+hex.EncodeToString(address.Addr[:]), toBlockNumArg(block))
-		resultChan <- struct {
-			code hexutil.Bytes
-			err  error
-		}{code, err}
-		close(resultChan)
-	}()
+// 	go func() {
+// 		var code hexutil.Bytes
+// 		err := h.provider.Call(&code, "eth_getCode", "0x"+hex.EncodeToString(address.Addr[:]), toBlockNumArg(block))
+// 		resultChan <- struct {
+// 			code hexutil.Bytes
+// 			err  error
+// 		}{code, err}
+// 		close(resultChan)
+// 	}()
 
-	result := <-resultChan
-	if result.err != nil {
-		return nil, result.err
-	}
-	return result.code, nil
-}
+// 	result := <-resultChan
+// 	if result.err != nil {
+// 		return nil, result.err
+// 	}
+// 	return result.code, nil
+// }
 
-func (h *HttpRpc) SendRawTransaction(data *[]byte) (common.Hash, error) {
-	resultChan := make(chan struct {
-		txHash common.Hash
-		err    error
-	})
+// func (h *HttpRpc) SendRawTransaction(data *[]byte) (common.Hash, error) {
+// 	resultChan := make(chan struct {
+// 		txHash common.Hash
+// 		err    error
+// 	})
 
-	go func() {
-		var txHash common.Hash
-		err := h.provider.Call(&txHash, "eth_sendRawTransaction", hexutil.Bytes(*data))
-		resultChan <- struct {
-			txHash common.Hash
-			err    error
-		}{txHash, err}
-		close(resultChan)
-	}()
+// 	go func() {
+// 		var txHash common.Hash
+// 		err := h.provider.Call(&txHash, "eth_sendRawTransaction", hexutil.Bytes(*data))
+// 		resultChan <- struct {
+// 			txHash common.Hash
+// 			err    error
+// 		}{txHash, err}
+// 		close(resultChan)
+// 	}()
 
-	result := <-resultChan
-	if result.err != nil {
-		return common.Hash{}, result.err
-	}
-	return result.txHash, nil
-}
+// 	result := <-resultChan
+// 	if result.err != nil {
+// 		return common.Hash{}, result.err
+// 	}
+// 	return result.txHash, nil
+// }
 
-func (h *HttpRpc) GetTransactionReceipt(txHash *common.Hash) (types.Receipt, error) {
-	resultChan := make(chan struct {
-		receipt types.Receipt
-		err     error
-	})
+// func (h *HttpRpc) GetTransactionReceipt(txHash *common.Hash) (types.Receipt, error) {
+// 	resultChan := make(chan struct {
+// 		receipt types.Receipt
+// 		err     error
+// 	})
 
-	go func() {
-		var receipt types.Receipt
-		err := h.provider.Call(&receipt, "eth_getTransactionReceipt", txHash)
-		resultChan <- struct {
-			receipt types.Receipt
-			err     error
-		}{receipt, err}
-		close(resultChan)
-	}()
+// 	go func() {
+// 		var receipt types.Receipt
+// 		err := h.provider.Call(&receipt, "eth_getTransactionReceipt", txHash)
+// 		resultChan <- struct {
+// 			receipt types.Receipt
+// 			err     error
+// 		}{receipt, err}
+// 		close(resultChan)
+// 	}()
 
-	result := <-resultChan
-	if result.err != nil {
-		return types.Receipt{}, result.err
-	}
-	return result.receipt, nil
-}
+// 	result := <-resultChan
+// 	if result.err != nil {
+// 		return types.Receipt{}, result.err
+// 	}
+// 	return result.receipt, nil
+// }
 
-func (h *HttpRpc) GetTransaction(txHash *common.Hash) (seleneCommon.Transaction, error) {
-	resultChan := make(chan struct {
-		tx  seleneCommon.Transaction
-		err error
-	})
+// func (h *HttpRpc) GetTransaction(txHash *common.Hash) (seleneCommon.Transaction, error) {
+// 	resultChan := make(chan struct {
+// 		tx  seleneCommon.Transaction
+// 		err error
+// 	})
 
-	go func() {
-		var tx seleneCommon.Transaction
-		err := h.provider.Call(&tx, "eth_getTransactionByHash", txHash)
-		resultChan <- struct {
-			tx  seleneCommon.Transaction
-			err error
-		}{tx, err}
-		close(resultChan)
-	}()
+// 	go func() {
+// 		var tx seleneCommon.Transaction
+// 		err := h.provider.Call(&tx, "eth_getTransactionByHash", txHash)
+// 		resultChan <- struct {
+// 			tx  seleneCommon.Transaction
+// 			err error
+// 		}{tx, err}
+// 		close(resultChan)
+// 	}()
 
-	result := <-resultChan
-	if result.err != nil {
-		return seleneCommon.Transaction{}, result.err
-	}
-	return result.tx, nil
-}
+// 	result := <-resultChan
+// 	if result.err != nil {
+// 		return seleneCommon.Transaction{}, result.err
+// 	}
+// 	return result.tx, nil
+// }
 
-func (h *HttpRpc) GetLogs(filter *ethereum.FilterQuery) ([]types.Log, error) {
-	resultChan := make(chan struct {
-		logs []types.Log
-		err  error
-	})
+// func (h *HttpRpc) GetLogs(filter *ethereum.FilterQuery) ([]types.Log, error) {
+// 	resultChan := make(chan struct {
+// 		logs []types.Log
+// 		err  error
+// 	})
 
-	go func() {
-		var logs []types.Log
-		err := h.provider.Call(&logs, "eth_getLogs", toFilterArg(*filter))
-		resultChan <- struct {
-			logs []types.Log
-			err  error
-		}{logs, err}
-		close(resultChan)
-	}()
+// 	go func() {
+// 		var logs []types.Log
+// 		err := h.provider.Call(&logs, "eth_getLogs", toFilterArg(*filter))
+// 		resultChan <- struct {
+// 			logs []types.Log
+// 			err  error
+// 		}{logs, err}
+// 		close(resultChan)
+// 	}()
 
-	result := <-resultChan
-	if result.err != nil {
-		return nil, result.err
-	}
-	return result.logs, nil
-}
+// 	result := <-resultChan
+// 	if result.err != nil {
+// 		return nil, result.err
+// 	}
+// 	return result.logs, nil
+// }
 
-func (h *HttpRpc) GetFilterChanges(filterID *uint256.Int) ([]types.Log, error) {
-	resultChan := make(chan struct {
-		logs []types.Log
-		err  error
-	})
+// func (h *HttpRpc) GetFilterChanges(filterID *uint256.Int) ([]types.Log, error) {
+// 	resultChan := make(chan struct {
+// 		logs []types.Log
+// 		err  error
+// 	})
 
-	go func() {
-		var logs []types.Log
-		err := h.provider.Call(&logs, "eth_getFilterChanges", filterID.Hex())
-		resultChan <- struct {
-			logs []types.Log
-			err  error
-		}{logs, err}
-		close(resultChan)
-	}()
+// 	go func() {
+// 		var logs []types.Log
+// 		err := h.provider.Call(&logs, "eth_getFilterChanges", filterID.Hex())
+// 		resultChan <- struct {
+// 			logs []types.Log
+// 			err  error
+// 		}{logs, err}
+// 		close(resultChan)
+// 	}()
 
-	result := <-resultChan
-	if result.err != nil {
-		return nil, result.err
-	}
-	return result.logs, nil
-}
+// 	result := <-resultChan
+// 	if result.err != nil {
+// 		return nil, result.err
+// 	}
+// 	return result.logs, nil
+// }
 
-func (h *HttpRpc) UninstallFilter(filterID *uint256.Int) (bool, error) {
-	resultChan := make(chan struct {
-		result bool
-		err    error
-	})
+// func (h *HttpRpc) UninstallFilter(filterID *uint256.Int) (bool, error) {
+// 	resultChan := make(chan struct {
+// 		result bool
+// 		err    error
+// 	})
 
-	go func() {
-		var result bool
-		err := h.provider.Call(&result, "eth_uninstallFilter", filterID.Hex())
-		resultChan <- struct {
-			result bool
-			err    error
-		}{result, err}
-		close(resultChan)
-	}()
+// 	go func() {
+// 		var result bool
+// 		err := h.provider.Call(&result, "eth_uninstallFilter", filterID.Hex())
+// 		resultChan <- struct {
+// 			result bool
+// 			err    error
+// 		}{result, err}
+// 		close(resultChan)
+// 	}()
 
-	result := <-resultChan
-	if result.err != nil {
-		return false, result.err
-	}
-	return result.result, nil
-}
+// 	result := <-resultChan
+// 	if result.err != nil {
+// 		return false, result.err
+// 	}
+// 	return result.result, nil
+// }
 
-func (h *HttpRpc) GetNewFilter(filter *ethereum.FilterQuery) (uint256.Int, error) {
-	resultChan := make(chan struct {
-		filterID uint256.Int
-		err      error
-	})
+// func (h *HttpRpc) GetNewFilter(filter *ethereum.FilterQuery) (uint256.Int, error) {
+// 	resultChan := make(chan struct {
+// 		filterID uint256.Int
+// 		err      error
+// 	})
 
-	go func() {
-		var filterID hexutil.Big
-		err := h.provider.Call(&filterID, "eth_newFilter", toFilterArg(*filter))
-		filterResult := big.Int(filterID)
-		resultChan <- struct {
-			filterID uint256.Int
-			err      error
-		}{*uint256.MustFromBig(&filterResult), err}
-		close(resultChan)
-	}()
+// 	go func() {
+// 		var filterID hexutil.Big
+// 		err := h.provider.Call(&filterID, "eth_newFilter", toFilterArg(*filter))
+// 		filterResult := big.Int(filterID)
+// 		resultChan <- struct {
+// 			filterID uint256.Int
+// 			err      error
+// 		}{*uint256.MustFromBig(&filterResult), err}
+// 		close(resultChan)
+// 	}()
 
-	result := <-resultChan
-	if result.err != nil {
-		return uint256.Int{}, result.err
-	}
-	return result.filterID, nil
-}
+// 	result := <-resultChan
+// 	if result.err != nil {
+// 		return uint256.Int{}, result.err
+// 	}
+// 	return result.filterID, nil
+// }
 
-func (h *HttpRpc) GetNewBlockFilter() (uint256.Int, error) {
-	resultChan := make(chan struct {
-		filterID uint256.Int
-		err      error
-	})
+// func (h *HttpRpc) GetNewBlockFilter() (uint256.Int, error) {
+// 	resultChan := make(chan struct {
+// 		filterID uint256.Int
+// 		err      error
+// 	})
 
-	go func() {
-		var filterID hexutil.Big
-		err := h.provider.Call(&filterID, "eth_newBlockFilter")
-		filterResult := big.Int(filterID)
-		resultChan <- struct {
-			filterID uint256.Int
-			err      error
-		}{*uint256.MustFromBig(&filterResult), err}
-		close(resultChan)
-	}()
+// 	go func() {
+// 		var filterID hexutil.Big
+// 		err := h.provider.Call(&filterID, "eth_newBlockFilter")
+// 		filterResult := big.Int(filterID)
+// 		resultChan <- struct {
+// 			filterID uint256.Int
+// 			err      error
+// 		}{*uint256.MustFromBig(&filterResult), err}
+// 		close(resultChan)
+// 	}()
 
-	result := <-resultChan
-	if result.err != nil {
-		return uint256.Int{}, result.err
-	}
-	return result.filterID, nil
-}
+// 	result := <-resultChan
+// 	if result.err != nil {
+// 		return uint256.Int{}, result.err
+// 	}
+// 	return result.filterID, nil
+// }
 
-func (h *HttpRpc) GetNewPendingTransactionFilter() (uint256.Int, error) {
-	resultChan := make(chan struct {
-		filterID uint256.Int
-		err      error
-	})
+// func (h *HttpRpc) GetNewPendingTransactionFilter() (uint256.Int, error) {
+// 	resultChan := make(chan struct {
+// 		filterID uint256.Int
+// 		err      error
+// 	})
 
-	go func() {
-		var filterID hexutil.Big
-		err := h.provider.Call(&filterID, "eth_newPendingTransactionFilter")
-		filterResult := big.Int(filterID)
-		resultChan <- struct {
-			filterID uint256.Int
-			err      error
-		}{*uint256.MustFromBig(&filterResult), err}
-		close(resultChan)
-	}()
+// 	go func() {
+// 		var filterID hexutil.Big
+// 		err := h.provider.Call(&filterID, "eth_newPendingTransactionFilter")
+// 		filterResult := big.Int(filterID)
+// 		resultChan <- struct {
+// 			filterID uint256.Int
+// 			err      error
+// 		}{*uint256.MustFromBig(&filterResult), err}
+// 		close(resultChan)
+// 	}()
 
-	result := <-resultChan
-	if result.err != nil {
-		return uint256.Int{}, result.err
-	}
-	return result.filterID, nil
-}
+// 	result := <-resultChan
+// 	if result.err != nil {
+// 		return uint256.Int{}, result.err
+// 	}
+// 	return result.filterID, nil
+// }
 
-func (h *HttpRpc) ChainId() (uint64, error) {
-	resultChan := make(chan struct {
-		chainID uint64
-		err     error
-	})
+// func (h *HttpRpc) ChainId() (uint64, error) {
+// 	resultChan := make(chan struct {
+// 		chainID uint64
+// 		err     error
+// 	})
 
-	go func() {
-		var chainID hexutil.Uint64
-		err := h.provider.Call(&chainID, "eth_chainId")
-		resultChan <- struct {
-			chainID uint64
-			err     error
-		}{uint64(chainID), err}
-		close(resultChan)
-	}()
+// 	go func() {
+// 		var chainID hexutil.Uint64
+// 		err := h.provider.Call(&chainID, "eth_chainId")
+// 		resultChan <- struct {
+// 			chainID uint64
+// 			err     error
+// 		}{uint64(chainID), err}
+// 		close(resultChan)
+// 	}()
 
-	result := <-resultChan
-	if result.err != nil {
-		return 0, result.err
-	}
-	return result.chainID, nil
-}
+// 	result := <-resultChan
+// 	if result.err != nil {
+// 		return 0, result.err
+// 	}
+// 	return result.chainID, nil
+// }
 
-func (h *HttpRpc) GetFeeHistory(blockCount uint64, lastBlock uint64, rewardPercentiles *[]float64) (FeeHistory, error) {
-	resultChan := make(chan struct {
-		feeHistory FeeHistory
-		err        error
-	})
+// func (h *HttpRpc) GetFeeHistory(blockCount uint64, lastBlock uint64, rewardPercentiles *[]float64) (FeeHistory, error) {
+// 	resultChan := make(chan struct {
+// 		feeHistory FeeHistory
+// 		err        error
+// 	})
 
-	go func() {
-		var feeHistory FeeHistory
-		err := h.provider.Call(&feeHistory, "eth_feeHistory", hexutil.Uint64(blockCount).String(), toBlockNumArg(lastBlock), rewardPercentiles)
-		resultChan <- struct {
-			feeHistory FeeHistory
-			err        error
-		}{feeHistory, err}
-		close(resultChan)
-	}()
+// 	go func() {
+// 		var feeHistory FeeHistory
+// 		err := h.provider.Call(&feeHistory, "eth_feeHistory", hexutil.Uint64(blockCount).String(), toBlockNumArg(lastBlock), rewardPercentiles)
+// 		resultChan <- struct {
+// 			feeHistory FeeHistory
+// 			err        error
+// 		}{feeHistory, err}
+// 		close(resultChan)
+// 	}()
 
-	result := <-resultChan
-	if result.err != nil {
-		return FeeHistory{}, result.err
-	}
-	return result.feeHistory, nil
-}
+// 	result := <-resultChan
+// 	if result.err != nil {
+// 		return FeeHistory{}, result.err
+// 	}
+// 	return result.feeHistory, nil
+// }
 
-func toBlockNumArg(number uint64) string {
-	if number == 0 {
-		return "latest"
-	}
-	return "0x" + strconv.FormatUint(number, 16)
-}
+// func toBlockNumArg(number uint64) string {
+// 	if number == 0 {
+// 		return "latest"
+// 	}
+// 	return "0x" + strconv.FormatUint(number, 16)
+// }
 
-func toFilterArg(q ethereum.FilterQuery) map[string]interface{} {
-	arg := make(map[string]interface{})
-	if len(q.Addresses) > 0 {
-		arg["address"] = q.Addresses
-	}
-	if len(q.Topics) > 0 {
-		arg["topics"] = q.Topics
-	}
-	if q.FromBlock != nil {
-		arg["fromBlock"] = toBlockNumArg(q.FromBlock.Uint64())
-	}
-	if q.ToBlock != nil {
-		arg["toBlock"] = toBlockNumArg(q.ToBlock.Uint64())
-	}
-	return arg
-}
+// func toFilterArg(q ethereum.FilterQuery) map[string]interface{} {
+// 	arg := make(map[string]interface{})
+// 	if len(q.Addresses) > 0 {
+// 		arg["address"] = q.Addresses
+// 	}
+// 	if len(q.Topics) > 0 {
+// 		arg["topics"] = q.Topics
+// 	}
+// 	if q.FromBlock != nil {
+// 		arg["fromBlock"] = toBlockNumArg(q.FromBlock.Uint64())
+// 	}
+// 	if q.ToBlock != nil {
+// 		arg["toBlock"] = toBlockNumArg(q.ToBlock.Uint64())
+// 	}
+// 	return arg
+// }

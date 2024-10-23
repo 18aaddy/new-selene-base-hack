@@ -1,0 +1,25 @@
+on: [push, pull_request]
+name: Test
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.21.x
+      - name: Checkout code
+        uses: actions/checkout@v2
+      - name: cache test vectors
+        id: cache-test-vectors
+        uses: actions/cache@v2
+        with:
+          path: test-vectors
+          key: bls-test-vectors-v0.1.1
+      - name: Pull test vectors
+        run: |
+          mkdir -p test-vectors
+          wget https://github.com/ethereum/bls12-381-tests/releases/download/v0.1.1/bls_tests_json.tar.gz -O - | tar -xz -C test-vectors
+        if: steps.cache-test-vectors.outputs.cache-hit != 'true'
+      - name: Test
+        run: go test ./...
